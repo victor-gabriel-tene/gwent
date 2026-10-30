@@ -1,9 +1,8 @@
 #pragma once
 
 #include "components/simple_scene.h"
-#include "lab_m1/Tema1/BatchRenderer.h"
+#include "components/text_renderer.h"
 #include "lab_m1/Tema1/GameRules.h"
-#include "lab_m1/Tema1/tests/PerformanceChecks.h"
 #include <map>
 #include <memory>
 
@@ -60,9 +59,10 @@ class Tema1 : public gfxc::SimpleScene {
     void HandleEvents(const std::vector<tema1::Event>& events);
     void CancelDrag();
     void VerifyScene(const char* directory);
+    void InitMeshes();
     void Render();
     void Board();
-    void BoardStatic();
+    void BoardBackground();
     void LeaderShape(tema1::Leader leader, float x, float y, float size, glm::vec3 color);
     void LeaderMenu();
     void LeaderPanel(int owner);
@@ -73,10 +73,9 @@ class Tema1 : public gfxc::SimpleScene {
     void CardBody(const tema1::Card& card, bool face);
     void Symbol(tema1::Type type, float x, float y, float size, glm::vec3 color);
     void Tooltip(int id);
-    void Ornament(float x, float y, float width);
     void Shape(const char* mesh, float x, float y, float w, float h,
-               glm::vec3 color, float angle = 0, float alpha = 1, int pattern = 0);
-    void Box(Rect r, glm::vec3 color, float alpha = 1, int pattern = 0);
+               glm::vec3 color, float angle = 0);
+    void Box(Rect r, glm::vec3 color);
     void Frame(Rect r, glm::vec3 color, float thickness = 1.5f);
     void Line(float x1, float y1, float x2, float y2, float width, glm::vec3 color);
     void Label(const std::string& value, float x, float top, float size, glm::vec3 color);
@@ -85,13 +84,8 @@ class Tema1 : public gfxc::SimpleScene {
     glm::vec3 TypeColor(tema1::Type type) const;
 
     tema1::Game game;
-    tema1::FrameBenchmark benchmark;
     std::map<int, Visual> visuals;
-    std::unique_ptr<tema1::BatchRenderer> renderer;
-    tema1::BatchRenderer::DrawList boardCache;
-    std::array<tema1::BatchRenderer::DrawList, 2> statusCache, deckCache;
-    std::array<std::string, 2> statusKey, deckKey;
-    std::map<std::string, tema1::BatchRenderer::DrawList> cardCache;
+    std::unique_ptr<gfxc::TextRenderer> textRenderer;
     glm::mat3 group = glm::mat3(1);
     State state = State::SelectLeader;
     float clock = 0, wait = 0, time = 0;
@@ -105,7 +99,6 @@ class Tema1 : public gfxc::SimpleScene {
     std::vector<std::string> history;
     std::array<float, 2> hitFlash = {{0, 0}};
     bool help = false, inspection = false;
-    bool frameDirty = true, forceRebuild = false;
     int verifyStage = 0, verifyCard = -1, verifyHand = 0;
 };
 }  // namespace m1

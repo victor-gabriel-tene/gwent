@@ -234,14 +234,16 @@ void Recovery() {
     Expect(game.cards[special].zone == Zone::Hand && game.cards[special].value == 1
         && !game.cards[special].suppressed, "medic revives specials and restores printed state");
     const int second = game.Add(0, Type::Shield, 2, Zone::Discard, Lane::Siege);
-    game.Resolve(Effect::Utility); Expect(game.cards[second].zone == Zone::Discard, "medic does not recur on board");
+    game.Resolve(Effect::Utility); Expect(game.cards[second].zone == Zone::Discard, "medic activates at most once per turn");
+    game.FinishTurn(); game.Resolve(Effect::Utility);
+    Expect(game.cards[second].zone == Zone::Discard, "medic does not recover again on later turns without replay");
     game.FinishTurn();
     const int decoy = game.Add(0, Type::Decoy, 1, Zone::Hand);
     const int opposing = game.Add(1, Type::Heal, 2, Zone::Board, Lane::Ranged);
     Expect(!game.CanPlay(0, decoy, Lane::Ranged, opposing) && !game.CanPlay(0, decoy, Lane::Melee, medic)
-        && !game.CanPlay(0, decoy, Lane::Ranged), "decoy requires matching friendly unit target");
+        && !game.CanPlay(0, decoy, Lane::Ranged), "decoy requires matching friendly board target");
     const int weather = game.Add(0, Type::Fog, 2, Zone::Board, Lane::Ranged);
-    Expect(!game.CanPlay(0, decoy, Lane::Ranged, weather), "decoy cannot target a special");
+    Expect(game.CanPlay(0, decoy, Lane::Ranged, weather), "decoy can target a special");
     game.cards[medic].value = 4; Expect(game.Play(0, decoy, Lane::Ranged, medic), "valid decoy placement");
     Expect(game.cards[medic].zone == Zone::Board, "decoy swap waits until after scorch");
     game.Resolve(Effect::Utility);
@@ -285,6 +287,61 @@ void Recovery() {
     game.Resolve(Effect::Utility);
     Expect(game.cards[enemyMedic].zone == Zone::Hand && !game.cards[enemyMedic].known,
            "enemy decoy return clears prior public identity");
+
+    // Every board type is a legal target; preserve its slot and make it replayable.
+    for (Type type : {Type::Damage, Type::Heal, Type::Shield, Type::Spy, Type::Frost,
+                      Type::Clear, Type::Fog, Type::Rain, Type::Horn, Type::Scorch, Type::Medic, Type::Decoy}) {
+        for (int slot = 0; slot < 3; ++slot) {
+            game.Empty(); KeepPlaying(game);
+            const Lane lane = Weather(type) ? WeatherLane(type) : Lane::Ranged;
+            for (int i = 0; i < slot; ++i) game.Add(0, Type::Shield, 1, Zone::Board, lane);
+            const int target = game.Add(0, type, 2, Zone::Board, lane);
+            for (int i = slot; i < 2; ++i) game.Add(0, Type::Shield, 1, Zone::Board, lane);
+            const int replacement = game.Add(0, Type::Decoy, 1, Zone::Hand);
+            game.cards[target].value = 4;
+            Expect(game.Play(0, replacement, lane, target), "Decoy accepts every friendly board type");
+            game.Resolve(Effect::Utility);
+            Expect(game.players[0].board[slot] == replacement && game.cards[target].zone == Zone::Hand
+                && game.cards[target].value == 2 && !game.cards[target].suppressed && game.Invariant(),
+                "replacement preserves first/middle/last slot and restores returned card");
+            game.FinishTurn();
+            Expect(game.Play(0, target, lane, type == Type::Decoy ? replacement : -1), "returned card can be replayed");
+        }
+    }
+
+    game.Empty(); KeepPlaying(game);
+    game.Add(0, Type::Medic, 2, Zone::Board, Lane::Ranged);
+    game.Add(0, Type::Medic, 2, Zone::Board, Lane::Ranged);
+    game.Add(0, Type::Rain, 2, Zone::Discard);
+    game.Add(0, Type::Shield, 2, Zone::Discard, Lane::Siege);
+    const size_t beforeRecovery = game.players[0].hand.size();
+    game.Resolve(Effect::Utility);
+    Expect(game.players[0].discard.size() == 2 && game.players[0].hand.size() == beforeRecovery
+        && game.Invariant(), "surviving medics do not recycle discarded cards without replay");
+}
+
+void EnemyResponses() {
+    section = "random enemy card response";
+    Game game;
+    for (unsigned seed = 0; seed < 100; ++seed) {
+        game.Empty(seed);
+        EnableLeader(game, 1, Leader::Emhyr);
+        const int decoy = game.Add(1, Type::Decoy, 1, Zone::Hand);
+        Expect(game.ChooseAction(1).kind == Action::UseLeader, "targetless hand falls back to unused leader");
+        game.players[1].leaderUsed = true;
+        Expect(game.ChooseAction(1).kind == Action::Skip, "no card or leader safely skips");
+        game.players[1].leaderUsed = false;
+        const int target = game.Add(1, Type::Fog, 2, Zone::Board);
+        const Action swap = game.ChooseAction(1);
+        Expect(swap.kind == Action::PlayCard && swap.card == decoy && swap.target == target
+            && swap.lane == Lane::Ranged && game.CanAct(1, swap), "enemy decoy selects a friendly special");
+        game.Add(1, Type::Damage, 3, Zone::Hand, Lane::Melee);
+        game.Add(1, Type::Shield, 2, Zone::Hand, Lane::Siege);
+        for (int n = 0; n < 10; ++n) {
+            const Action action = game.ChooseAction(1);
+            Expect(action.kind == Action::PlayCard && game.CanAct(1, action), "playable hand always gets a legal card response");
+        }
+    }
 }
 void Leaders() {
     section = "leader abilities";
@@ -369,6 +426,19 @@ void RoundsAndPassing() {
     Expect(game.roundResult == Result::PlayerWin && game.result == Result::Playing, "exhaustion uses HP only and ends round, not match");
     game.NextRound(); game.players[1].hp = 0; game.CheckLethal(); game.FinishTurn();
     Expect(game.result == Result::PlayerWin && game.round == 2, "two straight wins end match");
+    game.Empty(); EnableLeader(game, 0, Leader::Emhyr); EnableLeader(game, 1, Leader::FoltestClear);
+    game.players[1].hp = 29; game.FinishTurn();
+    Expect(game.roundResult == Result::PlayerWin && !game.players[0].leaderUsed && !game.players[1].leaderUsed,
+           "empty hands end round even with both leaders unused");
+    game.Empty(); EnableLeader(game, 0, Leader::Emhyr); EnableLeader(game, 1, Leader::FoltestClear);
+    game.FinishTurn(); Expect(game.roundResult == Result::Draw, "equal HP exhaustion draws with unused leaders");
+    game.Empty();
+    const int lastMedic = game.Add(0, Type::Medic, 2, Zone::Hand, Lane::Ranged);
+    const int recovered = game.Add(0, Type::Damage, 1, Zone::Discard, Lane::Melee);
+    game.Play(0, lastMedic, Lane::Ranged);
+    ResolveTurn(game);
+    Expect(game.roundResult == Result::Playing && game.cards[recovered].zone == Zone::Hand,
+           "final effect cycle recovery prevents premature hand exhaustion");
     game.Empty(); game.players[0].hp = 0; game.CheckLethal(); game.FinishTurn();
     game.NextRound(); game.players[1].hp = 0; game.CheckLethal(); game.FinishTurn();
     Expect(game.result == Result::Playing && game.players[0].crystals == 1 && game.players[1].crystals == 1, "split rounds require third");
@@ -439,7 +509,7 @@ void SeededMatches() {
 }  // namespace
 int main() {
     try {
-        OpeningAndLegality(); CoreRecurrence(); WeatherAndClear(); ScorchAndHorn(); Recovery(); Leaders(); RoundsAndPassing(); SeededMatches();
+        OpeningAndLegality(); CoreRecurrence(); WeatherAndClear(); ScorchAndHorn(); Recovery(); EnemyResponses(); Leaders(); RoundsAndPassing(); SeededMatches();
         std::cout << "PASS: " << checks << " checks, including all advanced rules and 1000 complete seeded matches\n";
     } catch (const std::exception& error) {
         std::cerr << "FAIL: " << error.what() << '\n'; return 1;

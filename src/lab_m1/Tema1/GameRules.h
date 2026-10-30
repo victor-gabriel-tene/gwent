@@ -66,7 +66,7 @@ inline const char* Description(Type t) {
         "Double your next turn's played card; lose one V. Horns do not stack.",
         "Cancel the opposing card played this turn if its V is at least this V; lose one V.",
         "On play, return a random discarded card to your hand at printed V.",
-        "Play over a friendly unit to return it at printed V. Decoy stays inert."};
+        "Play over a friendly board card to return it at printed V. Decoy stays inert."};
     return descriptions[static_cast<int>(t)];
 }
 inline bool Weather(Type t) { return t == Type::Frost || t == Type::Fog || t == Type::Rain; }
@@ -187,7 +187,7 @@ class Game {
         const Card& c = cards[id];
         if (c.type == Type::Decoy) {
             for (int target : players[owner].board)
-                if (Unit(cards[target].type) && cards[target].value > 0
+                if (OnBoard(target)
                     && std::find(lanes.begin(), lanes.end(), cards[target].lane) == lanes.end()) lanes.push_back(cards[target].lane);
             std::sort(lanes.begin(), lanes.end(), [](Lane a, Lane b) { return static_cast<int>(a) < static_cast<int>(b); });
         } else if (c.printedLane == Lane::Any) lanes = {Lane::Melee, Lane::Ranged, Lane::Siege};
@@ -249,15 +249,14 @@ class Game {
         if (players[owner].passed) return Action(Action::Skip);
         std::vector<Action> choices;
         for (int id : players[owner].hand) if (!LegalLanes(owner, id).empty()) choices.emplace_back(Action::PlayCard, id);
-        if (!players[owner].leaderUsed) choices.emplace_back(Action::UseLeader);
-        if (choices.empty()) return Action(Action::Skip);
-        choices.emplace_back(Action::Pass);
+        // A normal response always plays a random legal card. Leaders are a fallback.
+        if (choices.empty()) return CanUseLeader(owner) ? Action(Action::UseLeader) : Action(Action::Skip);
         Action a = choices[Pick(static_cast<int>(choices.size()))];
         if (a.kind == Action::PlayCard) {
             const auto lanes = LegalLanes(owner, a.card); a.lane = lanes[Pick(static_cast<int>(lanes.size()))];
             if (cards[a.card].type == Type::Decoy) {
                 std::vector<int> candidates;
-                for (int id : players[owner].board) if (Unit(cards[id].type) && cards[id].lane == a.lane) candidates.push_back(id);
+                for (int id : players[owner].board) if (CanPlay(owner, a.card, a.lane, id)) candidates.push_back(id);
                 a.target = candidates[Pick(static_cast<int>(candidates.size()))];
             }
         }
@@ -358,7 +357,8 @@ class Game {
     }
     std::vector<Event> FinishTurn() {
         std::vector<Event> events; const bool wasPlaying = roundResult == Result::Playing; CheckLethal();
-        if (Running() && !HasAction(0) && !HasAction(1)) EndRound(players[0].hp == players[1].hp ? Result::Draw
+        const bool emptyHands = players[0].hand.empty() && players[1].hand.empty();
+        if (Running() && (emptyHands || (!HasAction(0) && !HasAction(1)))) EndRound(players[0].hp == players[1].hp ? Result::Draw
             : players[0].hp > players[1].hp ? Result::PlayerWin : Result::EnemyWin);
         ScoreRound();
         if (wasPlaying && roundResult != Result::Playing) events.emplace_back(Event::RoundEnd, -1, -1, static_cast<int>(roundResult));
@@ -409,7 +409,7 @@ class Game {
         if (!RealLane(lane)) return false;
         const auto lanes = LegalLanes(owner, id); if (lanes.empty()) return false;
         if (std::find(lanes.begin(), lanes.end(), lane) == lanes.end()) return false;
-        if (cards[id].type == Type::Decoy) return OnBoard(target) && cards[target].owner == owner && Unit(cards[target].type) && cards[target].lane == lane;
+        if (cards[id].type == Type::Decoy) return OnBoard(target) && cards[target].owner == owner && cards[target].lane == lane;
         return true;
     }
     void ClearTurn() {
@@ -469,6 +469,7 @@ class Game {
         }
     }
     void ResolveUtility(std::vector<Event>& events) {
+        // Medic and Decoy trigger once when played; replaying them triggers them again.
         for (int owner = 0; owner < 2; ++owner) {
             if (utilityUsed[owner]) continue;
             utilityUsed[owner] = true;
@@ -480,7 +481,7 @@ class Game {
                 events.emplace_back(Event::Revive, owner, revived, cards[revived].value);
             } else if (cards[id].type == Type::Decoy) {
                 const int target = targets[owner];
-                if (!OnBoard(target) || cards[target].owner != owner || !Unit(cards[target].type)) continue;
+                if (!OnBoard(target) || cards[target].owner != owner) continue;
                 auto& board = players[owner].board;
                 const int position = static_cast<int>(std::find(board.begin(), board.end(), target) - board.begin());
                 Move(target, owner, Zone::Hand); cards[target].value = cards[target].printed; Remove(board, id);

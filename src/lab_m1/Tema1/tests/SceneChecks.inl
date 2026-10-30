@@ -1,4 +1,4 @@
-// Opt-in end-to-end checks. Fixtures exercise real input handlers and the GPU batch.
+// Opt-in end-to-end checks. Fixtures exercise real input handlers and framework rendering.
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
@@ -156,8 +156,8 @@ void Tema1::VerifyScene(const char* directory) {
         settleFixture(); ++verifyStage;
     } else if (verifyStage == 9 && ready()) {
         capture("09-advanced-cards");
-        hovered = verifyCard; frameDirty = true; Render(); capture("09c-unit-hover-preview");
-        hovered = -1; frameDirty = true;
+        hovered = verifyCard; Render(); capture("09c-unit-hover-preview");
+        hovered = -1;
         int decoy = -1;
         for (int id : game.players[0].hand) if (game.cards[id].type == Type::Decoy) decoy = id;
         expect(decoy >= 0, "Decoy fixture available");
@@ -240,14 +240,31 @@ void Tema1::VerifyScene(const char* directory) {
             && game.players[1].hand.size() == 10 && game.players[0].discard.empty()
             && !game.players[0].leaderUsed && game.players[0].crystals == 2, "fresh match resets all match state");
         capture("20-restarted-opening");
+        game.Empty(456);
+        game.players[1].passed = true;
+        verifyCard = game.Add(0, Type::Fog, 2, Zone::Board);
+        verifyHand = game.Add(0, Type::Decoy, 1, Zone::Hand);
+        game.Add(0, Type::Damage, 1, Zone::Hand, Lane::Melee);
+        settleFixture(); ++verifyStage;
+    } else if (verifyStage == 21 && ready()) {
+        const Action drop = DropAction(verifyHand, center(visuals[verifyCard].at));
+        expect(drop.target == verifyCard && game.CanAct(0, drop), "Decoy hit test accepts friendly weather");
+        play(verifyHand, center(visuals[verifyCard].at));
+        expect(state == State::PlayerPlace, "Decoy commits on a special card");
+        ++verifyStage;
+    } else if (verifyStage == 22 && ready()) {
+        expect(game.cards[verifyCard].zone == Zone::Hand && game.cards[verifyCard].value == 2
+            && game.cards[verifyHand].zone == Zone::Board && game.cards[verifyHand].lane == Lane::Ranged,
+            "Decoy replaces friendly weather and restores it to hand");
+        capture("21-decoy-special-return");
         std::cout << "PASS: advanced scene checks (leader selection/highlight, lanes, invalid/valid drag, crowded layout, "
-                     "Medic/Decoy, leader inspection/use, help, Retina/resize, three rounds, crystals, restart)\n" << std::flush;
+                     "Medic/Decoy including special targets, leader inspection/use, help, Retina/resize, three rounds, crystals, restart)\n" << std::flush;
         ++verifyStage; window->Close();
     }
     if (verifyStage == 5 && state == State::Reveal && verifyHand != -1) {
         expect(enemyCard >= 0 && game.cards[enemyCard].zone == Zone::Board && game.turn == 1,
                "enemy card is committed and rotates before the resolution cycle");
-        clock = .20f; frameDirty = true; Render();
+        clock = .20f; Render();
         capture("04c-enemy-reveal"); verifyHand = -1;
     }
     // Keep actual animation time, but avoid waiting through already-settled phase gaps.

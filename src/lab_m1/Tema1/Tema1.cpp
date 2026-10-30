@@ -4,7 +4,7 @@
 #include <cstdlib>
 #include <ctime>
 #include <sstream>
-#include "glm/gtc/matrix_transform.hpp"
+#include "lab_m1/lab3/transform2D.h"
 
 using namespace m1;
 using namespace tema1;
@@ -14,12 +14,6 @@ namespace {
 	const glm::vec3 brass(0.60f, 0.46f, 0.26f), gold(0.88f, 0.70f, 0.37f);
 	const glm::vec3 ivory(0.91f, 0.86f, 0.74f), muted(0.60f, 0.55f, 0.44f);
 	const glm::vec3 dark(0.075f, 0.056f, 0.043f), blue(0.31f, 0.59f, 0.76f);
-	glm::mat3 T(float x, float y) { glm::mat3 m(1); m[2] = glm::vec3(x, y, 1); return m; }
-	glm::mat3 S(float x, float y) { glm::mat3 m(1); m[0][0] = x; m[1][1] = y; return m; }
-	glm::mat3 R(float a) {
-		glm::mat3 m(1); m[0] = glm::vec3(std::cos(a), std::sin(a), 0);
-		m[1] = glm::vec3(-std::sin(a), std::cos(a), 0); return m;
-	}
 	std::string Number(int n) { return std::to_string(n); }
 	unsigned MatchSeed() {
 		const char* value = std::getenv("TEMA1_SEED");
@@ -32,23 +26,53 @@ Tema1::Tema1() : game(1) {}
 Tema1::~Tema1() = default;
 
 void Tema1::Init() {
-    if (const char* path = std::getenv("TEMA1_BENCHMARK_FILE")) benchmark.file = path;
-    forceRebuild = std::getenv("TEMA1_BENCHMARK_REBUILD") != nullptr;
+    // Same fixed, orthographic 2D camera setup as Lab 3.
+    auto camera = GetSceneCamera();
+    camera->SetOrthographic(0, W, 0, H, .01f, 400);
+    camera->SetPosition(glm::vec3(0, 0, 50));
+    camera->SetRotation(glm::vec3(0));
+    camera->Update();
     GetCameraInput()->SetActive(false);
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
     glfwSetWindowTitle(glfwGetCurrentContext(), "GWENT - The Card Table | EGC Tema 1");
-    renderer.reset(new BatchRenderer());
-    renderer->Init(PATH_JOIN(window->props.selfDir, "assets", "fonts", "Hack-Bold.ttf"));
+    InitMeshes();
+    textRenderer.reset(new gfxc::TextRenderer(window->props.selfDir, W, H));
+    textRenderer->Load(PATH_JOIN(window->props.selfDir, "assets", "fonts", "Hack-Bold.ttf"), 32);
     Restart();
-    // The benchmark measures the table, without requiring menu interaction.
-    if (!benchmark.file.empty()) { selectedLeader = 0; StartMatch(); }
+}
+
+void Tema1::InitMeshes() {
+    // Unit shapes are centered at the origin; model matrices set their size/position.
+    const std::vector<VertexFormat> rectangle = {
+        VertexFormat(glm::vec3(-.5f, -.5f, 0)), VertexFormat(glm::vec3(.5f, -.5f, 0)),
+        VertexFormat(glm::vec3(.5f, .5f, 0)), VertexFormat(glm::vec3(-.5f, .5f, 0))
+    };
+    Mesh* quad = new Mesh("t1_quad");
+    quad->InitFromData(rectangle, {0, 1, 2, 0, 2, 3});
+    AddMeshToList(quad);
+
+    Mesh* triangle = new Mesh("t1_triangle");
+    triangle->InitFromData({VertexFormat(glm::vec3(0, .5f, 0)),
+        VertexFormat(glm::vec3(-.5f, -.5f, 0)), VertexFormat(glm::vec3(.5f, -.5f, 0))}, {0, 1, 2});
+    AddMeshToList(triangle);
+
+    std::vector<VertexFormat> circle = {VertexFormat(glm::vec3(0))};
+    std::vector<unsigned int> indices;
+    const unsigned int segments = 48;
+    for (unsigned int i = 0; i < segments; ++i) {
+        const float angle = 2 * PI * i / segments;
+        circle.emplace_back(glm::vec3(.5f * std::cos(angle), .5f * std::sin(angle), 0));
+        indices.insert(indices.end(), {0, i + 1, (i + 1) % segments + 1});
+    }
+    Mesh* disk = new Mesh("t1_circle");
+    disk->InitFromData(circle, indices);
+    AddMeshToList(disk);
 }
 
 void Tema1::Restart() {
     game.Empty(MatchSeed());
-    visuals.clear(); history.clear(); revealed.clear(); cardCache.clear();
-    statusKey = {{"", ""}}; deckKey = {{"", ""}};
+    visuals.clear(); history.clear(); revealed.clear();
     selectedLeader = -1; dealIndex = 0; dealCount = 20;
     dragged = hovered = enemyCard = -1; effectIndex = 0;
     hitFlash = {{0, 0}}; help = inspection = false;
@@ -62,7 +86,6 @@ void Tema1::StartMatch() {
     game.Reset(MatchSeed(), false);
     game.players[0].leader = static_cast<Leader>(selectedLeader);
     visuals.clear(); history.clear(); revealed.clear();
-    statusKey = {{"", ""}}; deckKey = {{"", ""}};
     dealIndex = 0; dealCount = 20; enemyCard = dragged = hovered = -1;
     effectIndex = 0; hitFlash = {{0, 0}}; help = inspection = false;
     message = "ROUND 1 - THE CARDS ARE DEALT";
@@ -104,7 +127,7 @@ Action Tema1::DropAction(int id, glm::vec2 point) const {
         const auto& board = game.players[0].board;
         for (auto it = board.rbegin(); it != board.rend(); ++it) {
             const auto v = visuals.find(*it);
-            if (Unit(game.cards[*it].type) && game.cards[*it].lane == lane
+            if (game.CanPlay(0, id, lane, *it)
                 && v != visuals.end() && v->second.at.Contains(point)) { target = *it; break; }
         }
     }
@@ -139,10 +162,9 @@ void Tema1::FrameStart() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     Viewport();
 }
-void Tema1::SetState(State s, float duration) { state = s; clock = 0; wait = duration; frameDirty = true; }
+void Tema1::SetState(State s, float duration) { state = s; clock = 0; wait = duration; }
 
 void Tema1::Retarget(int id, Rect r, float duration) {
-    frameDirty = true;
     Visual& v = visuals[id];
     if (!v.initialized) { v.at = r; v.initialized = true; }
     v.dying = false; v.vanish = 0;
@@ -180,7 +202,6 @@ void Tema1::Animate(float dt) {
         Visual& v = entry.second;
         if (entry.first == dragged) continue;
         if (v.elapsed < v.duration) {
-            frameDirty = true;
             v.elapsed = std::min(v.duration, v.elapsed + dt);
             float a = v.elapsed / std::max(.001f, v.duration);
             a = a * a * (3 - 2 * a);
@@ -190,16 +211,14 @@ void Tema1::Animate(float dt) {
                         v.from.h + (v.target.h - v.from.h) * a);
         }
         if (v.dying && v.vanish < 1) {
-            frameDirty = true;
             v.vanish = std::min(1.f, v.vanish + dt / .28f);
         }
     }
     for (float& flash : hitFlash) if (flash > 0) {
-        frameDirty = true; flash = std::max(0.f, flash - dt);
+        flash = std::max(0.f, flash - dt);
     }
 }
 void Tema1::Update(float dt) {
-    const float realDt = dt;
     dt = std::max(0.f, dt); time += dt;
     const glm::ivec2 cursor = window->GetCursorPosition();
     mouse = Pointer(cursor.x, cursor.y);
@@ -211,7 +230,6 @@ void Tema1::Update(float dt) {
         if (state != State::Ready && state != State::Over && state != State::RoundOver
             && state != State::SelectLeader && clock >= wait) Advance();
     }
-    const int previousHover = hovered;
     hovered = -1;
     if (!help && !inspection && state == State::Ready && dragged < 0) {
         for (auto it = game.players[0].hand.rbegin(); it != game.players[0].hand.rend(); ++it)
@@ -223,12 +241,7 @@ void Tema1::Update(float dt) {
                 if (game.cards[id].known && visuals[id].at.Contains(mouse)) hovered = id;
         }
     }
-    if (hovered != previousHover || state == State::Reveal) frameDirty = true;
-    const auto renderStart = std::chrono::steady_clock::now();
     Render();
-    const double renderMs = std::chrono::duration<double, std::milli>(
-        std::chrono::steady_clock::now() - renderStart).count();
-    if (benchmark.Record(realDt, renderMs, state == State::Ready, framebufferW, framebufferH)) window->Close();
     if (const char* directory = std::getenv("TEMA1_VERIFY_DIR")) VerifyScene(directory);
 }
 
@@ -326,7 +339,7 @@ void Tema1::HandleEvents(const std::vector<Event>& events) {
                 v.at = Rect(1435, event.owner == 0 ? 275 : 530, 90, 126);
             }
             v.dying = false; v.vanish = 0;
-            history.insert(history.begin(), event.kind == Event::Return ? "A UNIT RETURNS TO HAND" : "MEDIC RECOVERS A CARD");
+            history.insert(history.begin(), event.kind == Event::Return ? "A CARD RETURNS TO HAND" : "MEDIC RECOVERS A CARD");
         } else if (event.kind == Event::Reveal && event.owner == 0) {
             inspectionCards.push_back(event.card);
         } else if (event.kind == Event::LeaderUsed) {
@@ -350,11 +363,10 @@ void Tema1::HandleEvents(const std::vector<Event>& events) {
     if (losses) history.insert(history.begin(), Number(losses) + " CARD(S) REMOVED");
     if (history.size() > 4) history.resize(4);
     detail = "Surviving board cards activate in effect order.";
-    frameDirty = true;
 }
 
 void Tema1::OnMouseMove(int x, int y, int, int) {
-    frameDirty = true; mouse = Pointer(x, y);
+    mouse = Pointer(x, y);
     if (dragged >= 0) {
         visuals[dragged].at.x = mouse.x - grab.x;
         visuals[dragged].at.y = mouse.y - grab.y;
@@ -362,7 +374,7 @@ void Tema1::OnMouseMove(int x, int y, int, int) {
 }
 void Tema1::OnMouseBtnPress(int x, int y, int buttons, int) {
     if (!IS_BIT_SET(buttons, GLFW_MOUSE_BUTTON_LEFT)) return;
-    frameDirty = true; mouse = Pointer(x, y);
+    mouse = Pointer(x, y);
     if (help) { help = false; return; }
     if (inspection) {
         if (Rect(690, 225, 220, 48).Contains(mouse)) inspection = false;
@@ -395,7 +407,7 @@ void Tema1::OnMouseBtnRelease(int x, int y, int buttons, int) {
     if (game.CanAct(0, action)) SubmitAction(action);
     else {
         Layout(); message = "RETURNING TO YOUR HAND";
-        detail = game.cards[id].type == Type::Decoy ? "Drop a Decoy on one of your units."
+        detail = game.cards[id].type == Type::Decoy ? "Drop a Decoy on one of your board cards."
             : "Release on a highlighted lane in your half of the battlefield.";
         SetState(State::Return, .26f);
     }
@@ -405,7 +417,6 @@ void Tema1::CancelDrag() {
     dragged = -1; Layout(); SetState(State::Return, .26f);
 }
 void Tema1::OnKeyPress(int key, int) {
-    frameDirty = true;
     if (inspection) {
         if (key == GLFW_KEY_ENTER || key == GLFW_KEY_SPACE) inspection = false;
         return;
@@ -417,7 +428,7 @@ void Tema1::OnKeyPress(int key, int) {
     if (key == GLFW_KEY_BACKSPACE && dragged >= 0) CancelDrag();
     if (key == GLFW_KEY_P && state == State::Ready && dragged < 0) SubmitAction(Action(Action::Pass));
 }
-void Tema1::OnWindowResize(int, int) { Viewport(); frameDirty = true; }
+void Tema1::OnWindowResize(int, int) { Viewport(); }
 
 #include "lab_m1/Tema1/Tema1Presentation.inl"
 #include "lab_m1/Tema1/tests/SceneChecks.inl"

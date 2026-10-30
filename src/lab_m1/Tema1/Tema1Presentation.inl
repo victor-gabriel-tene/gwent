@@ -1,11 +1,13 @@
-// Painter-ordered presentation. All geometry and text stays in the Tema1 batch.
+// Draw in painter order, using the framework helpers and Lab 3 model matrices.
 
 void Tema1::Shape(const char* mesh, float x, float y, float w, float h,
-                  glm::vec3 color, float angle, float alpha, int pattern) {
-    renderer->Shape(mesh,group*T(x,y)*R(angle)*S(w,h),glm::vec4(color,alpha),pattern);
+                  glm::vec3 color, float angle) {
+    const glm::mat3 model = group * transform2D::Translate(x,y)
+        * transform2D::Rotate(angle) * transform2D::Scale(w,h);
+    RenderMesh2D(meshes.at(mesh),model,color);
 }
-void Tema1::Box(Rect r, glm::vec3 color, float alpha, int pattern) {
-    Shape("t1_quad",r.x+r.w/2,r.y+r.h/2,r.w,r.h,color,0,alpha,pattern);
+void Tema1::Box(Rect r, glm::vec3 color) {
+    Shape("t1_quad",r.x+r.w/2,r.y+r.h/2,r.w,r.h,color);
 }
 void Tema1::Frame(Rect r, glm::vec3 color, float t) {
     Box(Rect(r.x,r.y,r.w,t),color); Box(Rect(r.x,r.y+r.h-t,r.w,t),color);
@@ -15,20 +17,23 @@ void Tema1::Line(float x1, float y1, float x2, float y2, float width, glm::vec3 
     Shape("t1_quad",(x1+x2)/2,(y1+y2)/2,
           std::sqrt((x2-x1)*(x2-x1)+(y2-y1)*(y2-y1)),width,color,std::atan2(y2-y1,x2-x1));
 }
-float Tema1::TextWidth(const std::string& value, float size) const { return renderer->TextWidth(value,size); }
+float Tema1::TextWidth(const std::string& value, float size) const {
+    float width = 0;
+    for (unsigned char c : value) {
+        const auto glyph = textRenderer->Characters.find(c < 128 ? c : '?');
+        if (glyph != textRenderer->Characters.end()) width += glyph->second.Advance >> 6;
+    }
+    return width * size / 32;
+}
 void Tema1::Label(const std::string& value, float x, float top, float size, glm::vec3 color) {
     const float sy = glm::length(glm::vec2(group[1])), sx = glm::length(glm::vec2(group[0]));
     if (sx < sy*.85f) return;
     const glm::vec3 p = group*glm::vec3(x,top,1);
-    renderer->Text(value,p.x,p.y,size*sy,color);
+    // Geometry uses a bottom-left origin; the supplied text helper uses top-left.
+    textRenderer->RenderText(value,p.x,H-p.y,size*sy/32,color);
 }
 void Tema1::Center(const std::string& value, float x, float top, float size, glm::vec3 color) {
     Label(value,x-TextWidth(value,size)/2,top,size,color);
-}
-void Tema1::Ornament(float x, float y, float width) {
-    Line(x-width/2,y,x-12,y,1,brass); Line(x+12,y,x+width/2,y,1,brass);
-    Shape("t1_quad",x,y,8,8,gold,PI/4);
-    Shape("t1_quad",x-width/2,y,4,4,brass,PI/4); Shape("t1_quad",x+width/2,y,4,4,brass,PI/4);
 }
 glm::vec3 Tema1::TypeColor(Type t) const {
     static const glm::vec3 colors[] = {
@@ -40,18 +45,16 @@ glm::vec3 Tema1::TypeColor(Type t) const {
     return colors[static_cast<int>(t)];
 }
 
-void Tema1::BoardStatic() {
-    Box(Rect(0,0,W,H),glm::vec3(.13f,.085f,.052f),1,1);
-    Frame(Rect(14,14,1572,872),brass,2); Frame(Rect(21,21,1558,858),glm::vec3(.29f,.22f,.13f),1);
+void Tema1::BoardBackground() {
+    Box(Rect(0,0,W,H),glm::vec3(.13f,.105f,.08f));
     Box(Rect(258,26,1124,848),glm::vec3(.065f,.045f,.029f));
     Frame(Rect(259,27,1122,846),brass,2);
-    Box(Rect(274,200,1092,500),glm::vec3(.235f,.175f,.112f),1,1);
     for (int owner = 0; owner < 2; ++owner) for (int i = 0; i < 3; ++i) {
         const Lane lane = static_cast<Lane>(i);
         const Rect r = LaneRect(owner,lane);
-        Box(r,owner == 0 ? glm::vec3(.27f,.205f,.135f) : glm::vec3(.225f,.17f,.12f),1,2);
+        Box(r,owner == 0 ? glm::vec3(.27f,.235f,.18f) : glm::vec3(.20f,.185f,.16f));
         Frame(r,glm::vec3(.37f,.28f,.18f),1);
-        Box(Rect(r.x,r.y,78,r.h),glm::vec3(.09f,.07f,.047f),.45f);
+        Box(Rect(r.x,r.y,78,r.h),glm::vec3(.12f,.105f,.085f));
         const float x = r.x+39, y = r.y+43;
         if (lane == Lane::Melee) {
             Line(x-10,y-12,x+10,y+12,3,brass);
@@ -68,9 +71,9 @@ void Tema1::BoardStatic() {
         }
         Center(LaneName(lane),x,r.y+15,7.5f,muted);
     }
-    Frame(Rect(274,200,1092,500),brass,2); Ornament(820,450,1060);
-    Box(Rect(274,34,1092,140),glm::vec3(.10f,.075f,.049f),1,1);
-    Box(Rect(274,746,1092,130),glm::vec3(.10f,.075f,.049f),1,1);
+    Line(274,450,1366,450,2,brass);
+    Box(Rect(274,34,1092,140),glm::vec3(.10f,.085f,.065f));
+    Box(Rect(274,746,1092,130),glm::vec3(.10f,.085f,.065f));
     Line(280,182,1360,182,1,brass); Line(280,734,1360,734,1,brass);
     Center("GWENT",132,868,30,gold); Center("THE CARD TABLE",132,830,10,muted);
     Label("LEFT MOUSE  PICK UP / PLACE",32,43,8,muted);
@@ -79,14 +82,13 @@ void Tema1::BoardStatic() {
 }
 
 void Tema1::Board() {
-    if (boardCache.empty()) {
-        const size_t mark = renderer->Mark(); BoardStatic(); boardCache = renderer->CopyFrom(mark);
-    } else renderer->Append(boardCache);
+    BoardBackground();
     if (dragged >= 0) {
         for (Lane lane : game.LegalLanes(0,dragged)) {
             const Rect r = LaneRect(0,lane);
             const bool inside = r.Contains(mouse);
-            Box(r,gold,inside ? .15f : .055f); Frame(r,inside ? gold : brass,inside ? 2 : 1);
+            Box(Rect(r.x+78,r.y,r.w-78,r.h),inside ? glm::vec3(.39f,.32f,.20f) : glm::vec3(.31f,.27f,.18f));
+            Frame(r,inside ? gold : brass,inside ? 2 : 1);
         }
         if (game.cards[dragged].type == Type::Decoy) for (int id : game.players[0].board) {
             if (!game.CanPlay(0,dragged,game.cards[id].lane,id)) continue;
@@ -107,45 +109,32 @@ void Tema1::Board() {
 
 void Tema1::Status(int owner) {
     const Player& p = game.players[owner];
-    const std::string key = Number(p.hp)+":"+Number(p.shield)+":"+Number(static_cast<int>(p.hand.size()))+":"+Number(p.crystals)+":"+Number(p.passed);
-    if (hitFlash[owner] <= 0 && statusKey[owner] == key && !statusCache[owner].empty()) {
-        renderer->Append(statusCache[owner]); return;
-    }
-    const size_t mark = renderer->Mark();
     const float y = owner == 0 ? 222.f : 458.f;
-    Box(Rect(30,y,206,211),glm::vec3(.065f,.051f,.039f),1,2); Frame(Rect(30,y,206,211),brass,1);
+    Box(Rect(30,y,206,211),dark); Frame(Rect(30,y,206,211),brass,1);
     Center(owner == 0 ? "YOU" : "OPPONENT",133,y+192,19,ivory);
     Line(44,y+164,222,y+164,1,brass);
-    Shape("t1_circle",75,y+117,68,68,brass); Shape("t1_circle",75,y+117,62,62,glm::vec3(.13f,.105f,.075f));
-    if (hitFlash[owner] > 0) Shape("t1_circle",75,y+117,62,62,glm::vec3(.7f,.12f,.08f),0,hitFlash[owner]);
+    Shape("t1_circle",75,y+117,62,62,hitFlash[owner] > 0 ? glm::vec3(.7f,.12f,.08f) : glm::vec3(.18f,.155f,.12f));
     Center(Number(p.hp),75,y+132,27,ivory); Center("HP",75,y+97,10,muted);
     for (int i = 0; i < 30; ++i) {
         const Rect pip(115+(i%10)*10.6f,y+127-(i/10)*14,8,10);
         Box(pip,i < p.hp ? glm::vec3(.70f,.20f,.15f) : glm::vec3(.18f,.14f,.11f));
-        Frame(pip,i < p.hp ? glm::vec3(.87f,.37f,.25f) : glm::vec3(.26f,.21f,.16f),.6f);
     }
     Label("SHIELD " + Number(p.shield),44,y+74,10,blue);
     const int columns = 24, rows = std::max(1,(p.shield+columns-1)/columns);
     const float step = std::min(6.f,34.f/rows);
     for (int i = 0; i < p.shield; ++i) Box(Rect(44+(i%columns)*7.5f,y+54-(i/columns)*step,5.5f,std::max(.2f,step*.76f)),blue);
     Center(p.passed ? "PASSED THIS ROUND" : Number(static_cast<int>(p.hand.size()))+" CARDS IN HAND",133,y+20,10,p.passed ? gold : muted);
-    if (hitFlash[owner] <= 0) { statusKey[owner] = key; statusCache[owner] = renderer->CopyFrom(mark); }
 }
 
 void Tema1::Deck(int owner) {
     const float y = owner == 0 ? 275.f : 530.f;
     const Player& p = game.players[owner];
-    std::string key = Number(static_cast<int>(p.deck.size()))+":"+Number(static_cast<int>(p.discard.size()));
-    if (owner == 0) for (const auto& line : history) key += ":"+line;
-    if (deckKey[owner] == key && !deckCache[owner].empty()) { renderer->Append(deckCache[owner]); return; }
-    const size_t mark = renderer->Mark();
     Center(owner == 0 ? "YOUR DECK" : "ENEMY DECK",1480,y+160,12,ivory);
     for (int i = 3; i >= 0; --i) {
         const Rect r(1435+i*4.f,y+i*4.f,90,126);
-        Box(r,glm::vec3(.13f,.105f,.075f),1,1); Frame(r,brass,1.5f);
+        Box(r,glm::vec3(.13f,.105f,.075f)); Frame(r,brass,1.5f);
     }
-    Shape("t1_quad",1480,y+63,38,38,brass,PI/4); Shape("t1_quad",1480,y+63,30,30,glm::vec3(.16f,.12f,.08f),PI/4);
-    Shape("t1_quad",1480,y+63,12,12,gold,PI/4);
+    Shape("t1_quad",1480,y+63,32,32,gold,PI/4);
     if (owner == 0) {
         Center(Number(static_cast<int>(p.deck.size()))+" LEFT / "+Number(static_cast<int>(p.discard.size()))+" DISCARDED",1480,y-14,8.5f,gold);
     } else {
@@ -153,10 +142,8 @@ void Tema1::Deck(int owner) {
         Center(Number(static_cast<int>(p.discard.size()))+" DISCARDED",1480,y-36,10,muted);
     }
     if (owner == 0) {
-        Ornament(1480,456,150);
         for (size_t i = 0; i < history.size(); ++i) Center(history[i],1480,182-i*20.f,8,muted);
     }
-    deckKey[owner] = key; deckCache[owner] = renderer->CopyFrom(mark);
 }
 
 void Tema1::Symbol(Type type, float x, float y, float size, glm::vec3 color) {
@@ -209,38 +196,28 @@ void Tema1::Symbol(Type type, float x, float y, float size, glm::vec3 color) {
 void Tema1::Card(int id, Rect r, bool face, bool selected, float flip) {
     const glm::mat3 saved = group;
     const tema1::Card& c = game.cards[id];
-    group = group*T(r.x+r.w/2,r.y+r.h/2)*S(r.w/90*flip,r.h/126)*T(-45,-63);
-    Box(Rect(4,-5,90,126),glm::vec3(0),.38f);
-    if (selected) { Box(Rect(-4,-4,98,134),gold,.20f); Frame(Rect(-3,-3,96,132),gold,2); }
-    const int effective = game.EffectiveValue(id);
-    const std::string key = face ? Number(static_cast<int>(c.type))+":"+Number(c.value)+":"+Number(c.printed)+":"+Number(effective)+":"+
-        Number(static_cast<int>(c.printedLane))+":"+Number(static_cast<int>(c.lane))+":"+Number(c.suppressed)+":"+Number(c.zone == Zone::Board) : "BACK";
-    auto cached = cardCache.find(key);
-    if (cached == cardCache.end()) {
-        const glm::mat3 transform = group; group = glm::mat3(1);
-        const size_t mark = renderer->Mark(); CardBody(c,face);
-        cached = cardCache.emplace(key,renderer->ExtractFrom(mark)).first; group = transform;
-    }
-    renderer->Append(cached->second,group); group = saved;
+    group = group * transform2D::Translate(r.x+r.w/2,r.y+r.h/2)
+        * transform2D::Scale(r.w/90*flip,r.h/126) * transform2D::Translate(-45,-63);
+    CardBody(c,face);
+    if (selected) Frame(Rect(-3,-3,96,132),gold,2);
+    group = saved;
 }
 
 void Tema1::CardBody(const tema1::Card& c, bool face) {
-    Box(Rect(0,0,90,126),brass); Box(Rect(2,2,86,122),dark);
-    Box(Rect(5,5,80,116),face ? TypeColor(c.type) : glm::vec3(.17f,.125f,.08f),1,face ? 2 : 1);
-    Frame(Rect(7,7,76,112),face ? ivory*.65f : brass,.8f);
+    Box(Rect(0,0,90,126),face ? TypeColor(c.type) : glm::vec3(.17f,.14f,.10f));
+    Frame(Rect(0,0,90,126),brass,2);
     if (!face) {
-        Shape("t1_quad",45,63,44,44,brass,PI/4); Shape("t1_quad",45,63,37,37,dark,PI/4);
-        Shape("t1_quad",45,63,23,23,brass,PI/4); Shape("t1_quad",45,63,16,16,glm::vec3(.17f,.125f,.08f),PI/4);
-        Shape("t1_quad",45,63,5,5,gold,PI/4); Line(17,21,28,21,1,brass); Line(62,105,73,105,1,brass);
+        Shape("t1_quad",45,63,36,36,brass,PI/4);
+        Shape("t1_quad",45,63,27,27,dark,PI/4);
         return;
     }
     const glm::vec3 ink = c.type == Type::Frost || c.type == Type::Clear ? dark : ivory;
     const int v = std::max(0,game.EffectiveValue(c.id));
     const bool boosted = v > c.value || c.value > c.printed;
-    Shape("t1_quad",49,65,49,49,ink,Temporary(c.type) ? PI/4 : 0,.15f);
+    Shape("t1_quad",49,65,49,49,ink*.65f,Temporary(c.type) ? PI/4 : 0);
     Shape("t1_quad",49,65,45,45,TypeColor(c.type),Temporary(c.type) ? PI/4 : 0);
     Symbol(c.type,49,65,33,ink);
-    Shape("t1_circle",19,106,24,24,brass); Shape("t1_circle",19,106,20,20,ivory);
+    Shape("t1_circle",19,106,22,22,ivory);
     Center(Number(v),19,114,15,boosted ? glm::vec3(.13f,.40f,.20f) : dark);
     const int rows = v > 6 ? (v+1)/2 : v;
     const float step = std::min(10.f,52.f/std::max(1,rows));
@@ -251,7 +228,7 @@ void Tema1::CardBody(const tema1::Card& c, bool face) {
     const Lane lane = c.zone == Zone::Board ? c.lane : c.printedLane;
     if (lane != Lane::None) {
         const char* shortLane = lane == Lane::Melee ? "M" : lane == Lane::Ranged ? "R" : lane == Lane::Siege ? "S" : "*";
-        Shape("t1_quad",71,105,17,17,ink,PI/4,.20f); Center(shortLane,71,110,10,ink);
+        Shape("t1_quad",71,105,17,17,dark,PI/4); Center(shortLane,71,110,10,ivory);
     }
     Box(Rect(7,8,76,21),ivory);
     const std::string name = Name(c.type);
@@ -272,9 +249,9 @@ void Tema1::Tooltip(int id) {
         if (Temporary(c.type) && effective == c.value) value += " / LIFETIME "+Number(c.value);
     }
     const std::string text = std::string(Name(c.type))+" / "+LaneName(c.zone == Zone::Board ? c.lane : c.printedLane)+" / "+value+" / "+Description(c.type);
-    Box(Rect(278,704,1084,31),dark,.98f); Frame(Rect(278,704,1084,31),brass,1);
+    Box(Rect(278,704,1084,31),dark); Frame(Rect(278,704,1084,31),brass,1);
     Center(text,820,724,std::min(10.f,1048.f/std::max(1.f,TextWidth(text,1))),ivory);
-    Box(Rect(1390,478,188,237),dark,1,1); Frame(Rect(1390,478,188,237),brass,1);
+    Box(Rect(1390,478,188,237),dark); Frame(Rect(1390,478,188,237),brass,1);
     Center("CARD PREVIEW",1484,702,11,gold);
     Card(id,Rect(1422,511,126,176.4f),true);
     Center(value,1484,496,std::min(9.f,174.f/std::max(1.f,TextWidth(value,1))),muted);
@@ -313,8 +290,8 @@ void Tema1::LeaderPanel(int owner) {
     const Rect r = LeaderRect(owner);
     const bool usable = !p.leaderUsed && !p.passed;
     const bool hover = r.Contains(mouse);
-    Box(r,glm::vec3(.08f,.064f,.045f),1,2); Frame(r,hover && owner == 0 && usable ? gold : brass,hover ? 2 : 1);
-    LeaderShape(p.leader,r.x+39,r.y+43,49,usable ? gold : muted*.65f);
+    Box(r,dark); Frame(r,hover && owner == 0 && usable ? gold : brass,hover ? 2 : 1);
+    LeaderShape(p.leader,r.x+39,r.y+43,49,p.leaderUsed ? glm::vec3(.42f) : usable ? gold : muted);
     const std::string name = LeaderName(p.leader);
     Center(name,r.x+r.w/2,r.y+r.h-10,std::min(10.f,(r.w-12)/std::max(1.f,TextWidth(name,1))),ivory);
     Label(p.leaderUsed ? "USED" : p.passed ? "PASSED" : "READY",r.x+78,r.y+46,10,usable ? gold : muted);
@@ -326,27 +303,23 @@ void Tema1::LeaderPanel(int owner) {
     }
     if (hover && !help && !inspection && state == State::Ready) {
         const std::string text = LeaderDescription(p.leader);
-        Box(Rect(278,704,1084,31),dark,.98f); Frame(Rect(278,704,1084,31),brass,1);
+        Box(Rect(278,704,1084,31),dark); Frame(Rect(278,704,1084,31),brass,1);
         Center(text,820,724,std::min(10.f,1048.f/std::max(1.f,TextWidth(text,1))),ivory);
     }
 }
 
 void Tema1::LeaderMenu() {
-    Box(Rect(0,0,W,H),glm::vec3(.07f,.052f,.035f),1,1);
-    Frame(Rect(22,22,1556,856),brass,2); Frame(Rect(30,30,1540,840),glm::vec3(.30f,.23f,.14f),1);
-    Center("GWENT",800,827,50,gold); Ornament(800,756,700);
+    Box(Rect(0,0,W,H),dark);
+    Center("GWENT",800,827,50,gold);
     Center("CHOOSE YOUR LEADER",800,716,25,ivory);
     Center("One power for the match. Choose the advantage you want at your side.",800,673,13,muted);
     static const glm::vec3 colors[] = {{.73f,.56f,.26f},{.70f,.64f,.41f},{.50f,.65f,.72f},{.46f,.67f,.42f},{.72f,.45f,.25f}};
     for (int i = 0; i < static_cast<int>(Leader::Count); ++i) {
         const Leader leader = static_cast<Leader>(i); const Rect r = LeaderChoiceRect(i);
         const bool chosen = selectedLeader == i, hover = r.Contains(mouse);
-        Box(Rect(r.x+5,r.y-7,r.w,r.h),glm::vec3(0),.35f);
-        Box(r,chosen ? glm::vec3(.19f,.145f,.085f) : glm::vec3(.105f,.081f,.054f),1,2);
+        Box(r,chosen ? glm::vec3(.22f,.19f,.13f) : glm::vec3(.13f,.115f,.09f));
         Frame(r,chosen || hover ? gold : brass,chosen ? 3 : 1);
-        Frame(Rect(r.x+7,r.y+7,r.w-14,r.h-14),brass,.7f);
-        Shape("t1_circle",r.x+r.w/2,r.y+211,136,136,colors[i],0,.07f);
-        if (chosen) LeaderShape(leader,r.x+r.w/2,r.y+211,105*1.15f,gold*.46f);
+        if (chosen) LeaderShape(leader,r.x+r.w/2,r.y+211,105*1.15f,blue);
         LeaderShape(leader,r.x+r.w/2,r.y+211,105,chosen ? gold : colors[i]);
         const std::string name = LeaderName(leader);
         Center(name,r.x+r.w/2,r.y+132,std::min(16.f,(r.w-28)/std::max(1.f,TextWidth(name,1))),ivory);
@@ -365,8 +338,8 @@ void Tema1::LeaderMenu() {
 }
 
 void Tema1::RulesOverlay() {
-    Box(Rect(0,0,W,H),glm::vec3(0),.83f);
-    Box(Rect(190,115,1220,670),dark,1,1); Frame(Rect(190,115,1220,670),brass,2);
+    Box(Rect(0,0,W,H),dark);
+    Frame(Rect(190,115,1220,670),brass,2);
     Center("THE RULES OF THE TABLE",800,751,29,gold);
     Center("PLAY A CARD, USE YOUR LEADER, OR PASS THE ROUND",800,705,13,muted);
     for (int i = 0; i < 12; ++i) {
@@ -386,15 +359,15 @@ void Tema1::RulesOverlay() {
     Center("ORDER: LEADER > SCORCH > MEDIC / DECOY > SPY > CLEAR > WEATHER",800,259,11,gold);
     Center("HORN > SHIELD > DAMAGE > HEAL",800,240,11,gold);
     Center("Recurring board effects activate each turn. Temporary cards lose 1 V. Zero V removes a card.",800,215,10.5f,ivory);
-    Center("Pass lasts for the round. Both passed or out of actions: compare HP; shield does not break ties.",800,194,10.5f,ivory);
+    Center("Empty hands, both passed or out of actions: compare HP; shield does not break ties.",800,194,10.5f,ivory);
     Center("Lose a round: lose a crystal. Ties cost both one. New round: 30 HP, no shield; draw one card.",800,173,10.5f,ivory);
     Center("Hands and decks carry over. Each leader power can be used once per match. H OR CLICK TO RETURN.",800,146,10,muted);
 }
 
 void Tema1::Render() {
     glDisable(GL_DEPTH_TEST); glDisable(GL_CULL_FACE); glPolygonMode(GL_FRONT_AND_BACK,GL_FILL);
-    if (!frameDirty && !forceRebuild) { renderer->Redraw(); return; }
-    renderer->Begin(); group = glm::mat3(1);
+    glDisable(GL_BLEND);
+    group = glm::mat3(1);
     if (state == State::SelectLeader) {
         LeaderMenu();
     } else {
@@ -424,9 +397,8 @@ void Tema1::Render() {
         if (dragged >= 0) Card(dragged,visuals[dragged].at,true,true);
         if (state == State::RoundOver || state == State::Over) {
             const bool match = state == State::Over;
-            Box(Rect(0,0,W,H),glm::vec3(0),.70f);
-            Box(Rect(470,284,660,350),dark,1,1); Frame(Rect(470,284,660,350),brass,2);
-            Frame(Rect(478,292,644,334),brass,1); Ornament(800,586,490);
+            Box(Rect(0,0,W,H),dark);
+            Frame(Rect(470,284,660,350),brass,2);
             Center(match ? "MATCH COMPLETE" : "ROUND COMPLETE",800,558,15,muted);
             Center(message,800,520,std::min(39.f,590.f/std::max(1.f,TextWidth(message,1))),gold);
             Center("YOU  " + Number(game.players[0].hp)+" HP   :   "+Number(game.players[1].hp)+" HP  OPPONENT",800,461,20,ivory);
@@ -437,8 +409,8 @@ void Tema1::Render() {
             Center(match ? "PLAY AGAIN  [R]" : "NEXT ROUND",800,353,19,ivory);
         }
         if (inspection) {
-            Box(Rect(0,0,W,H),glm::vec3(0),.82f);
-            Box(Rect(280,195,1040,510),dark,1,1); Frame(Rect(280,195,1040,510),brass,2);
+            Box(Rect(0,0,W,H),dark);
+            Frame(Rect(280,195,1040,510),brass,2);
             Center("THE OPPONENT'S REVEALED CARDS",800,659,25,gold);
             Center("These cards remain visible in their hand.",800,612,12,muted);
             const float step = 156, width = revealed.empty() ? 0 : (revealed.size()-1)*step+126;
@@ -449,5 +421,4 @@ void Tema1::Render() {
         }
     }
     if (help) RulesOverlay();
-    renderer->Submit(forceRebuild); frameDirty = false;
 }
