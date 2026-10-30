@@ -27,7 +27,8 @@ class Tema1 : public gfxc::SimpleScene {
         float elapsed = 0, duration = 0.25f, vanish = 0;
         bool initialized = false, dying = false;
     };
-    enum class State { Deal, Ready, Return, PlayerPlace, EnemyPlace, Reveal, Resolve, Over };
+    enum class State { SelectLeader, Deal, Ready, Return, PlayerPlace, EnemyPlace, Reveal,
+                       Resolve, RoundOver, Over };
 
     void FrameStart() override;
     void Update(float dt) override;
@@ -39,6 +40,14 @@ class Tema1 : public gfxc::SimpleScene {
     void OnWindowResize(int width, int height) override;
 
     void Restart();
+    void StartMatch();
+    void BeginNextRound();
+    void SubmitAction(const tema1::Action& action);
+    Rect LaneRect(int owner, tema1::Lane lane) const;
+    Rect LeaderRect(int owner) const;
+    Rect LeaderChoiceRect(int index) const;
+    Rect PassRect() const;
+    tema1::Action DropAction(int id, glm::vec2 point) const;
     void Viewport();
     glm::vec2 Pointer(int x, int y) const;
     void SetState(State s, float duration);
@@ -54,6 +63,10 @@ class Tema1 : public gfxc::SimpleScene {
     void Render();
     void Board();
     void BoardStatic();
+    void LeaderShape(tema1::Leader leader, float x, float y, float size, glm::vec3 color);
+    void LeaderMenu();
+    void LeaderPanel(int owner);
+    void RulesOverlay();
     void Status(int owner);
     void Deck(int owner);
     void Card(int id, Rect r, bool face, bool selected = false, float flip = 1);
@@ -78,18 +91,20 @@ class Tema1 : public gfxc::SimpleScene {
     tema1::BatchRenderer::DrawList boardCache;
     std::array<tema1::BatchRenderer::DrawList, 2> statusCache, deckCache;
     std::array<std::string, 2> statusKey, deckKey;
-    std::map<std::pair<int,int>, tema1::BatchRenderer::DrawList> cardCache;
+    std::map<std::string, tema1::BatchRenderer::DrawList> cardCache;
     glm::mat3 group = glm::mat3(1);
-    State state = State::Deal;
+    State state = State::SelectLeader;
     float clock = 0, wait = 0, time = 0;
     int dealIndex = 0, enemyCard = -1, effectIndex = 0, dragged = -1, hovered = -1;
+    int dealCount = 20, selectedLeader = -1;
+    std::vector<int> revealed;
     glm::vec2 mouse = glm::vec2(-1), grab = glm::vec2(0);
     int viewportX = 0, viewportY = 0, viewportW = 1600, viewportH = 900;
     int framebufferW = 1600, framebufferH = 900;
     std::string message, detail;
     std::vector<std::string> history;
     std::array<float, 2> hitFlash = {{0, 0}};
-    bool help = false;
+    bool help = false, inspection = false;
     bool frameDirty = true, forceRebuild = false;
     int verifyStage = 0, verifyCard = -1, verifyHand = 0;
 };

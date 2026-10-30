@@ -1,14 +1,14 @@
 # Tema1 — GWENT: The Card Table
 
-A C++11/OpenGL implementation of all **basic** requirements from
-[EGC Tema 1, 2026](https://ocw.cs.pub.ro/courses/egc/teme/2026/01).
-The procedural walnut/brass tabletop is inspired by the Witcher 3 GWENT UI;
-the rules follow the homework's simplified HP-based game.
+A C++11/OpenGL implementation of the HP-based game from
+[EGC Tema 1, 2026](https://ocw.cs.pub.ro/courses/egc/teme/2026/01), including
+three battlefield lanes, all twelve card types, five selectable leaders, passing
+and matches of up to three rounds. The walnut/brass table, cards, symbols and
+leader shapes use procedural geometry; no downloaded artwork is required.
 
 ## Build and run
 
-From the repository root, using the framework's existing dependencies. Release is
-recommended for normal play and is built separately from the existing Debug tree:
+From the repository root, with the framework's existing dependencies:
 
 ```sh
 cmake -S . -B build/release -DCMAKE_BUILD_TYPE=Release
@@ -16,130 +16,173 @@ cmake --build build/release -j 6
 ./build/release/bin/Release/GFXFramework
 ```
 
-The existing Debug build remains available with `cmake -S . -B build`,
+The Debug configuration remains available with `cmake -S . -B build`,
 `cmake --build build -j 6`, and `./build/bin/Debug/GFXFramework`.
-Run with the generated `assets` link beside the executable intact.
-No additional libraries or downloaded artwork are required.
+Keep the generated `assets` link beside the executable intact.
+
+Set `TEMA1_SEED` to an unsigned integer for a reproducible shuffled deal, opposing
+leader and random choices. Repeat the same player actions to replay a match:
+
+```sh
+TEMA1_SEED=42 ./build/release/bin/Release/GFXFramework
+```
 
 ## Controls
 
 | Control | Action |
 | --- | --- |
-| Hold left mouse on a hand card | Pick up and drag |
-| Release inside your lower battlefield half | Play one card |
-| Release elsewhere | Animate back to the original hand slot; no turn spent |
+| Click a leader in the opening menu | Select it; its matching silhouette grows behind it |
+| Click the selected leader again | Begin the match against a random opposing leader |
+| Hold left mouse on a hand card | Pick up and drag, preserving the grab offset |
+| Release on a highlighted friendly lane | Play the card if that lane is legal |
+| Release a Decoy over a friendly unit | Return that unit to hand and put the Decoy in its place |
+| Release outside a legal destination | Animate back to hand without spending the action |
 | Backspace while dragging | Cancel the drag |
-| Hover over a visible card | Show its description |
-| H, or the Rules button | Open/close the rules overlay; pause turn progression |
+| Click your leader panel | Use its once-per-match power instead of playing a card |
+| P, or Pass Round | Pass for the rest of the current round |
+| Hover over a visible card or leader | Show its description; cards also receive an enlarged sidebar preview |
+| H, or the Rules button during a match | Open/close the rules overlay and pause turn progression |
 | Click the rules overlay | Close it |
-| R, or Play Again after a result | Begin a fresh game |
-| Escape | Exit (framework control) |
+| Continue, Enter or Space in Emhyr's inspection | Resume after reading the revealed cards |
+| Next Round, or Enter after a round result | Clear the board, reset HP/shield and draw one card each |
+| R, or Play Again after the match result | Return to leader selection for a new match |
+| Escape | Exit, using the framework control |
 
-## Cards and match rules
+Only the player hand and revealed enemy hand cards expose their faces and tooltips.
+The opponent places ordinary cards face down, then flips them before resolution.
 
-Both sides start at 30/30 HP, with no shield and ten randomly dealt cards.
-There are no ordinary deck draws after the opening deal.
+## Cards and lanes
 
-Each player's shuffled 30-card deck contains:
+Both players begin with 30 HP, zero shield, two crystals and a ten-card opening
+hand from a shuffled 30-card deck. Each battlefield half has Melee, Ranged and
+Siege lanes. A card's upper-right badge shows its permitted lane: **M**, **R**,
+**S**, or **\*** for any lane. Units have fixed printed lanes; Medic is Ranged.
+Frost, Fog and Rain occupy their corresponding lane. Other specials accept any
+friendly lane, subject to the Decoy target requirement.
 
-| Type | Count / starting V | Effect each activation |
+| Type | Cards per deck / printed V | Behavior |
 | --- | --- | --- |
-| Damage, red triangle | 12: four each at V 1, 2, 3 | Deal V damage |
-| Heal, green diamond | 6: three each at V 1, 2 | Restore V HP, capped at 30 |
-| Shield, blue circle | 6: three each at V 1, 2 | Add V shield |
-| Spy, black paired diamonds | 2 at V 2 | Steal one random opponent hand card |
-| Frost, white snowflake | 2 at V 2 | Reduce every opponent board card's V by 1 |
-| Clear Sky, yellow sun | 2 at V 1 | Remove all active Frost on both sides |
+| Damage, red triangle | 12: four each at 1, 2, 3 | Deal V damage each turn |
+| Heal, green diamond | 4: two each at 1, 2 | Restore V HP each turn, capped at 30 |
+| Shield, blue circle | 4: two each at 1, 2 | Add V shield each turn |
+| Medic, green cross | 2 at 2 | On play, recover one random discarded card to hand at printed V |
+| Spy, black paired diamonds | 1 at 2 | Steal one random opposing hand card each turn |
+| Frost, white snowflake | 1 at 2 | Reduce every opposing Melee board card by 1 each turn |
+| Fog, gray horizontal lines | 1 at 2 | Reduce every opposing Ranged board card by 1 each turn |
+| Rain, blue cloud and drops | 1 at 2 | Reduce every opposing Siege board card by 1 each turn |
+| War Horn, orange horn | 1 at 2 | Arm a bonus that doubles the card played on the following turn |
+| Scorch, purple flame | 1 at 2 | Suppress the opposing card played this turn if its effective V is at least Scorch's |
+| Clear Sky, yellow sun | 1 at 1 | Remove all Frost, Fog and Rain from both boards |
+| Decoy, brown dummy | 1 at 1 | On play, return a selected friendly unit to hand at printed V |
 
-The three temporary types are Spy, Frost and Clear Sky. The homework permits
-three of the five listed types for basic credit. War Horn and Scorch are deferred.
-Square and diamond symbol frames distinguish permanent and temporary categories.
-Current V is displayed both numerically and through geometric units along the
-card's left side. HP and shield also have individual geometric unit indicators.
+Damage, Heal, Shield and Medic count as units for Decoy targeting. The Medic
+remains on the board after its one-time recovery. A Decoy remains as an inert
+board card and cannot itself be a Decoy target. A Medic with no discard target
+still uses the action. Returning or recovering a card restores printed V and
+clears its previous board status.
 
-The player places one card; the enemy randomly chooses and places one face down,
-then flips it face up. **All surviving board cards** resolve every turn, including
-those played earlier:
+Spy, weather, Clear Sky, War Horn and Scorch are temporary. Each loses one V
+after its activation, including suppressed activations or activations with no
+available target. Temporary V controls lifetime, except that Scorch also uses V
+as its cancellation threshold. Any board card reduced to V <= 0 is discarded.
+Square/diamond symbol frames distinguish permanent and temporary categories.
+Current effective V appears as a numeral and individual geometric units. Hover
+previews show the effective V and distinguish base/lifetime and printed values
+when boosted. Boosted cards receive a green value/frame; suppressed cards receive
+a crossed-out symbol.
 
-**Spy → Clear → Frost → Shield → Damage → Heal.**
+## Leaders
 
-This is the homework's prescribed ordering with the unimplemented Scorch and
-War Horn phases skipped. Every temporary card loses one V after its activation;
-any board card at V ≤ 0 is discarded. Temporary V controls lifetime, not effect
-magnitude: a Spy steals one card and a Frost applies one reduction per activation.
+A leader power costs the primary action and can be used **once per match**.
+It remains spent in later rounds. All leader effects resolve before card effects.
 
-### Defaults for unspecified interactions
+| Leader / geometric shape | Power |
+| --- | --- |
+| Foltest: Clear Sky / circle | Remove all weather from both boards |
+| Emhyr / diamond | Reveal up to three random enemy hand cards |
+| Eredin / hexagon | Double effective values of friendly Melee cards for this turn |
+| Francesca / triangle | Destroy one strongest opposing Melee card, choosing randomly among tied cards |
+| Foltest: Siege Horn / star | Double a Siege card played on the next turn; the opportunity expires that turn |
 
-- Same-type effects use a phase-start snapshot and resolve symmetrically.
-- Multiple Spies choose distinct targets from hands after both placements.
-  Transfers cannot select a card that another Spy has just transferred that phase.
-- A temporary activation without a target still consumes one V.
-- Clear removes both players' Frost cards, including freshly played cards.
-  It does not restore V already lost to earlier Frost activations.
-- Frost affects every opposing board type. All Frost sources alive at its phase
-  start activate, including ones destroyed by opposing Frost in that phase.
-- Cards destroyed in an earlier phase cannot activate later in that turn.
-- Shield accumulates without a gameplay cap, persists between turns, and remains
-  after the Shield card that created it is destroyed. It absorbs damage first.
-- Both sides' damage is simultaneous. Check lethal before Heal; no resurrection.
-- One empty-handed side automatically passes; surviving cards still activate.
-  Spy can refill an empty hand. Both-empty exhaustion is checked after resolution.
-- Zero HP loses. Simultaneous lethal is a draw. If both hands are empty, compare
-  HP only; equal HP means a draw. Shield is not a tiebreaker.
+Emhyr opens a paused inspection of only the revealed cards. Those cards stay
+visible in the enemy hand while that knowledge remains valid. Unrevealed cards
+share identical backs. Eredin modifies effective V without permanently changing
+the cards' stored V.
+
+## Turn, round and match rules
+
+Each side takes one primary action per turn: play a card, use its unused leader,
+or pass. The enemy randomly chooses among its legal actions, with card and lane
+choices kept separate. A passed player takes no further primary actions in that
+round; its surviving board cards continue to activate while the opponent acts.
+A player with no usable card and no unused leader skips automatically. A Skip
+can become playable again after Spy or recovery; an explicit Pass stays locked.
+
+The shared phase order is:
+
+**Leader -> Scorch -> Medic / Decoy -> Spy -> Clear Sky -> Weather -> War Horn -> Shield -> Damage -> Heal.**
+
+- Recurring effects include surviving cards from earlier turns. Medic and Decoy
+  resolve their utility only on the turn they are played.
+- Same-phase effects use phase-start snapshots and resolve symmetrically. Spies
+  choose distinct targets from the hands after both primary actions, without
+  selecting cards just transferred by another Spy in that phase.
+- All three weather types resolve together. They reduce every opposing board
+  type in the matching lane. Each weather source also loses one lifetime V.
+  Clear Sky removes weather before weather resolution and does not restore V
+  lost on earlier turns.
+- Scorch suppresses the newly played opposing card for this turn without
+  destroying it. Suppressed temporary cards still decay. Scorch sources evaluate
+  the same phase snapshot, so opposing Scorches can suppress one another.
+- War Horn arms the following turn's played-card bonus on each activation.
+  Multiple horns do not stack. The bonus expires on that following turn even
+  if its owner chooses another action or plays outside Foltest's Siege condition.
+- Shield has no gameplay cap, persists between turns and survives destruction of
+  its source. Damage consumes shield before HP. Damage is simultaneous; check
+  lethal before Heal, so healing cannot revive a defeated player.
+- Zero HP loses the round; simultaneous lethal draws it. Once both sides have
+  passed or have no available primary action, compare HP. Equal HP draws the
+  round; shield is not a tiebreaker. No extra effect cycle runs solely because
+  both sides passed or skipped.
+
+Losing a round costs one crystal. A drawn round costs both sides one crystal.
+At zero crystals a player loses the match; both reaching zero together draws it.
+A match therefore ends within three rounds.
+
+At each new round, all board cards enter their owners' discard piles, both sides
+return to 30 HP and zero shield, Pass and pending turn bonuses clear, and each
+player draws one card if its deck is not empty. Remaining hands, deck order,
+discard piles and spent leader powers carry over. No ordinary card draw occurs
+between turns.
 
 ## Implementation map
 
-- `GameRules.h`: graphics-independent state, deck generation, legal placement,
-  effect phases, outcomes and ownership invariant.
-- `Tema1.h` / `Tema1.cpp`: turn controller, event presentation, reusable geometric
-  shapes, logical layout, dragging and animations.
-- `BatchRenderer.h` / `.cpp`: one painter-ordered draw for procedural geometry
-  and atlas text, streamed rotating buffers, cached text layout and retained frames.
-- `tests/rules_tests.cpp`: standalone deterministic and randomized rule checks.
-- `tests/SceneChecks.inl`: opt-in application-level interaction/rendering checks.
+- `GameRules.h`: graphics-independent cards, lanes, legal actions, deck creation,
+  effect phases, leaders, round/match outcomes and ownership invariants.
+- `Tema1.h` / `Tema1.cpp`: scene state machine, shared hit rectangles, dragging,
+  stable animated layouts, reveal/inspection flow and round transitions.
+- `Tema1Presentation.inl`: procedural cards and leaders, six lane rows, drop
+  highlights, status/crystals, menus and overlays.
+- `BatchRenderer.h` / `.cpp`: painter-ordered geometry/text batch, immutable font
+  atlas, rotating upload buffers, cached text and retained frames.
+- `tests/rules_tests.cpp`: deterministic rule scenarios and 1,000 seeded matches.
+- `tests/SceneChecks.inl`: opt-in tests through the actual scene handlers and GPU.
 - `tests/PerformanceChecks.h`: opt-in wall-clock frame/render benchmark.
 
-All positions use a 1600×900 logical canvas, with uniform scaling and letterboxing.
-Pointer conversion queries actual GLFW window/framebuffer sizes, including Retina
-scaling. Geometry and text use the same viewport. Hands retain order in one centered
-row; board groups may use a second row. Every layout change interpolates from the
-current position. The enemy reveal follows a vertical-axis angle from 0 to π,
-using its orthographic projected width and swapping faces at π/2.
+The scene uses a uniformly scaled 1600x900 logical canvas with letterboxing and
+Retina-aware inverse pointer mapping. Each lane centers and scales its own cards.
+Stable card IDs preserve animation continuity through hand transfers and recovery.
+The same lane geometry drives rendering, legal drop highlighting and hit tests.
 
-### Rendering performance
-
-All geometry and text is submitted in **one ordered draw call per frame**. Glyphs
-share a single immutable font atlas. Changed frames use rotating buffers and a
-replacement buffer store; there is no per-character `glBufferSubData` overwrite.
-Board decoration, card faces, status/deck panels and text layouts are cached.
-Stationary frames reuse the uploaded GPU geometry without rebuilding or uploading
-it. There are no per-shape uniform queries or frequent GL error queries in the
-rendering path. Animation uses elapsed wall time rather than a 100 ms timestep cap.
-
-The renderer is local to Tema1; the framework and laboratory text/mesh code are
-unchanged. The viewport retains the same uniform logical scaling illustrated by
-lab 3, including Retina-aware inverse pointer conversion.
-
-Measured on the development M1 Mac at a 2560×1440 framebuffer:
-
-| Configuration / workload | Rendered FPS | Mean rendering CPU time |
-| --- | ---: | ---: |
-| Original Debug renderer | 5.49 | 180.08 ms |
-| Batched Debug, stationary table | 88.70 | 0.065 ms |
-| Batched Debug, forced rebuild/upload every frame | 120.07 | 1.750 ms |
-| Batched Release, stationary table | 101.72 | 0.066 ms |
-
-These are short wall-clock measurements, not a fixed FPS guarantee; presentation,
-display synchronization and system scheduling affect frame intervals. The forced
-rebuild test checks that performance does not depend only on the idle-frame cache.
-
-No source changes are required outside Tema1 except selecting `m1::Tema1` in
-`src/main.cpp`. The existing CMake source glob and scene include already support it.
-The user's other laboratory files remain untouched.
+All geometry and text uses one ordered draw call per frame. Idle frames reuse
+uploaded geometry. Changed frames use rotating buffers with replacement stores;
+there is no per-character buffer overwrite or per-shape uniform lookup. Cached
+card faces include every visible lane, V, boost and suppression distinction.
+Animations use elapsed wall time. Rendering remains local to Tema1.
 
 ## Verification
 
-Standalone tests need only a C++11 compiler. On macOS with Clang:
+Standalone rules checks require only a C++11 compiler:
 
 ```sh
 clang++ -std=c++11 -Wall -Wextra -pedantic -fsanitize=address,undefined \
@@ -148,63 +191,62 @@ clang++ -std=c++11 -Wall -Wextra -pedantic -fsanitize=address,undefined \
 /tmp/tema1-rules-tests
 ```
 
-Checks cover recurrence, shield/heal boundaries, temporary decay, Spy transfers,
-weather timing, destruction, simultaneous lethal, exhaustion, restart and 1,000
-complete seeded matches. Ownership/value invariants are checked after every phase.
+They cover deck composition, lane legality, one-action enforcement, recurrence,
+weather snapshots, cancellation, Horn expiry, recovery, all five leaders, hidden
+information, passing, crystal loss, round persistence and 1,000 complete seeded
+matches. Ownership/value invariants are checked after resolution phases.
 
-For application-level checks, first build the game and create an output directory:
+For application-level checks, build the game and create an output directory:
 
 ```sh
 mkdir -p /tmp/tema1-ui-checks
 TEMA1_VERIFY_DIR=/tmp/tema1-ui-checks ./build/bin/Debug/GFXFramework
 ```
 
-This opt-in driver exercises the scene's actual mouse handlers, valid/invalid drops,
-enemy response and effect progression, help, window resizing, complete-match flow,
-and restart. It saves seven GPU frame captures as PPM images, prints a PASS message,
-and exits. It does not run during ordinary play.
+The opt-in scene driver exercises input handlers, lane and target legality,
+advanced cards, leader selection/use, hidden information, recovery, resizing,
+round transitions and complete-match restart. It saves 20+ GPU captures as PPM
+images, prints a PASS message and exits. It does not run during ordinary play.
 
-To measure an idle, fully dealt game (one second of warmup, then six seconds):
+To measure an idle, fully dealt game:
 
 ```sh
 TEMA1_BENCHMARK_FILE=/tmp/tema1-performance.json ./build/bin/Debug/GFXFramework
 ```
 
-The JSON reports rendered FPS, mean/p95 frame intervals, render CPU time and
-framebuffer dimensions. To stress rebuilding and uploading every frame, including
-when the table is stationary:
+Benchmark mode automatically selects Foltest: Clear Sky and completes the
+opening deal without menu input. It then uses one second of warmup and six
+seconds of idle sampling before exiting. To force rebuilding/uploading on every
+frame:
 
 ```sh
 TEMA1_BENCHMARK_REBUILD=1 TEMA1_BENCHMARK_FILE=/tmp/tema1-rebuild.json \
   ./build/bin/Debug/GFXFramework
 ```
 
-Use the same window size, configuration and power settings for comparisons; run
-one game instance at a time. Frame intervals include presentation/vsync, while
-render CPU time measures building/submitting the frame. GPU work is asynchronous,
-so CPU submission time is not a standalone measure of GPU frame time.
+JSON reports FPS, mean/p95 frame interval, rendering CPU time and framebuffer
+size. Use the same window, build configuration and power settings for comparisons
+and run one game instance at a time. Frame intervals include presentation/vsync;
+CPU submission time does not measure the full asynchronous GPU frame time.
 
-## Basic rubric coverage
+Advanced-scene measurements on the development machine, at a 2560x1440
+framebuffer with `TEMA1_SEED=42`:
 
-| Area | Points | Coverage |
-| --- | ---: | --- |
-| Board | 20 | Two halves, both hands, colored card faces, type/category symbols, side V units, both deck stacks |
-| Drag and drop | 35 | Rectangle selection/release checks, grab offset, cursor following, topmost drag, valid placement, invalid animated return |
-| Drawing | 15 | Both opening hands animate from their respective decks |
-| Organization | 20 | Both hands/board groups center and translate; stable hand ordering, crowded layouts |
-| Permanent types | 15 | Damage, Heal, Shield |
-| Temporary types | 15 | Spy, Frost, Clear |
-| Effect resolution | 15 | Recurrence, specified relative order, decay and destruction |
-| Enemy | 5 | Random hand choice, placement, rotating reveal before effects |
-| Life UI | 5 | One rectangle per HP and separate shield units |
-| Flow | 5 | Turns, forced empty-hand pass, outcomes, restart |
-| **Total** | **150** | All basic requirements |
+| Configuration | Rendered FPS | Mean rendering CPU time |
+| --- | ---: | ---: |
+| Debug, stationary table | 60.00 | 0.095 ms |
+| Debug, forced rebuild/upload every frame | 60.00 | 2.690 ms |
+| Release, stationary table | 60.00 | 0.128 ms |
 
-Advanced lanes, additional cards, leaders and best-of-three match rounds are deferred.
+These are short wall-clock samples, not a fixed FPS guarantee. Display timing
+and scheduling affect frame intervals. The rebuild run verifies that performance
+does not depend only on the retained idle frame.
 
 ## Submission notes
 
-Include source and required resources, with no executables/build clutter; keep the
-archive below 50 MB. The coursework also requires an in-person presentation. Be
-prepared to explain the transformations, pointer mapping, phase snapshots, temporary
-decay, card ownership and animation/controller separation.
+Select `m1::Tema1` in `src/main.cpp`. Existing CMake source discovery and the scene
+include support Tema1 without additional libraries. Keep source and required
+resources, exclude executables/build clutter, and keep the coursework archive
+below 50 MB. The in-person presentation should explain transforms, pointer
+mapping, batched rendering, legal actions, phase snapshots, cancellation/lifetime,
+card ownership and state carried between rounds.
