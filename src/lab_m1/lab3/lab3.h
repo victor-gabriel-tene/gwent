@@ -35,6 +35,8 @@ namespace m1
         float angularStep;
 
         // TODO(student): If you need any other class variables, define them here.
+        glm::vec2 triangleVertices[3];
+        glm::mat3 triangleMatrix;
 
     };
 }   // namespace m1

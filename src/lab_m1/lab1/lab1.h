@@ -28,6 +28,9 @@ namespace m1
         void OnWindowResize(int width, int height) override;
 
         // TODO(student): Class variables go here
-
+		glm::vec3 color = glm::vec3(0, 0, 0);
+		std::string meshName = "box";
+		glm::vec3 position = glm::vec3(0, 0, 0);
+		glm::vec3 sinusPosition = glm::vec3(0, 0, 0);
     };
 }   // namespace m1

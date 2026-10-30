@@ -2,6 +2,7 @@
 
 #include <vector>
 #include <iostream>
+#include <cmath>
 
 #include "lab_m1/lab3/transform2D.h"
 #include "lab_m1/lab3/object2D.h"
@@ -28,7 +29,8 @@ Lab3::~Lab3()
 
 void Lab3::Init()
 {
-    glm::ivec2 resolution = window->GetResolution();
+    // props.resolution already contains framebuffer pixels, including Retina scaling.
+    glm::ivec2 resolution = window->props.resolution;
     auto camera = GetSceneCamera();
     camera->SetOrthographic(0, (float)resolution.x, 0, (float)resolution.y, 0.01f, 400);
     camera->SetPosition(glm::vec3(0, 0, 50));
@@ -43,6 +45,8 @@ void Lab3::Init()
     // then in the `cx` and `cy` class variables (see the header). Use
     // `corner` and `squareSide`. These two class variables will be used
     // in the `Update()` function. Think about it, why do you need them?
+    cx = corner.x + squareSide / 2;
+    cy = corner.y + squareSide / 2;
 
     // Initialize tx and ty (the translation steps)
     translateX = 0;
@@ -63,6 +67,25 @@ void Lab3::Init()
 
     Mesh* square3 = object2D::CreateSquare("square3", corner, squareSide, glm::vec3(0, 0, 1));
     AddMeshToList(square3);
+
+    // Q, W and E select the red, green and blue vertices, respectively.
+    triangleVertices[0] = glm::vec2(0, 0);
+    triangleVertices[1] = glm::vec2(120, 0);
+    triangleVertices[2] = glm::vec2(60, 100);
+
+    vector<VertexFormat> triangleMeshVertices = {
+        VertexFormat(glm::vec3(triangleVertices[0], 0), glm::vec3(1, 0, 0)),
+        VertexFormat(glm::vec3(triangleVertices[1], 0), glm::vec3(1, 0, 0)),
+        VertexFormat(glm::vec3(triangleVertices[2], 0), glm::vec3(1, 0, 0))
+    };
+    vector<unsigned int> triangleIndices = { 0, 1, 2 };
+
+    Mesh* triangle = new Mesh("triangle");
+    triangle->SetDrawMode(GL_TRIANGLES);
+    triangle->InitFromData(triangleMeshVertices, triangleIndices);
+    AddMeshToList(triangle);
+
+    triangleMatrix = transform2D::Translate(resolution.x * 0.75f, resolution.y * 0.6f);
 }
 
 
@@ -72,7 +95,7 @@ void Lab3::FrameStart()
     glClearColor(0, 0, 0, 1);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    glm::ivec2 resolution = window->GetResolution();
+    glm::ivec2 resolution = window->props.resolution;
     // Sets the screen area where to draw
     glViewport(0, 0, resolution.x, resolution.y);
 }
@@ -84,30 +107,45 @@ void Lab3::Update(float deltaTimeSeconds)
     // in order to create animations. Use the class variables in the
     // class header, and if you need more of them to complete the task,
     // add them over there!
+	angularStep += deltaTimeSeconds;
+	translateX = 100.0f * std::sin(angularStep);
+	translateY = 50.0f * std::cos(angularStep);
 
-    modelMatrix = glm::mat3(1);
-    modelMatrix *= transform2D::Translate(150, 250);
+	scaleX = 1.0f + 0.5f * std::sin(angularStep);
+	scaleY = scaleX;
+	
     // TODO(student): Create animations by multiplying the current
     // transform matrix with the matrices you just implemented.
     // Remember, the last matrix in the chain will take effect first!
+	modelMatrix = glm::mat3(1);
+    modelMatrix *= transform2D::Translate(150, 250);
+	modelMatrix *= transform2D::Translate(translateX, translateY);
 
     RenderMesh2D(meshes["square1"], shaders["VertexColor"], modelMatrix);
 
-    modelMatrix = glm::mat3(1);
-    modelMatrix *= transform2D::Translate(400, 250);
     // TODO(student): Create animations by multiplying the current
     // transform matrix with the matrices you just implemented
     // Remember, the last matrix in the chain will take effect first!
+	modelMatrix = glm::mat3(1);
+    modelMatrix *= transform2D::Translate(400, 250);
+	modelMatrix *= transform2D::Translate(cx, cy);
+	modelMatrix *= transform2D::Scale(scaleX, scaleY);
+	modelMatrix *= transform2D::Translate(-cx, -cy);
 
     RenderMesh2D(meshes["square2"], shaders["VertexColor"], modelMatrix);
 
-    modelMatrix = glm::mat3(1);
-    modelMatrix *= transform2D::Translate(650, 250);
     // TODO(student): Create animations by multiplying the current
     // transform matrix with the matrices you just implemented
     // Remember, the last matrix in the chain will take effect first!
+	modelMatrix = glm::mat3(1);
+    modelMatrix *= transform2D::Translate(650, 250);
+	modelMatrix *= transform2D::Translate(cx, cy);
+	modelMatrix *= transform2D::Rotate(angularStep);
+	modelMatrix *= transform2D::Translate(-cx, -cy);
 
     RenderMesh2D(meshes["square3"], shaders["VertexColor"], modelMatrix);
+
+    RenderMesh2D(meshes["triangle"], shaders["VertexColor"], triangleMatrix);
 }
 
 
@@ -124,6 +162,27 @@ void Lab3::FrameEnd()
 
 void Lab3::OnInputUpdate(float deltaTime, int mods)
 {
+    int pivotIndex = -1;
+    if (window->KeyHold(GLFW_KEY_Q)) {
+        pivotIndex = 0;
+    } else if (window->KeyHold(GLFW_KEY_W)) {
+        pivotIndex = 1;
+    } else if (window->KeyHold(GLFW_KEY_E)) {
+        pivotIndex = 2;
+    }
+
+    if (pivotIndex == -1) {
+        return;
+    }
+
+    // Use the vertex's current position so changing pivots causes no jump.
+    glm::vec3 pivot = triangleMatrix * glm::vec3(triangleVertices[pivotIndex], 1);
+    const float rotationSpeed = 1.5f;
+
+    triangleMatrix = transform2D::Translate(pivot.x, pivot.y)
+                   * transform2D::Rotate(rotationSpeed * deltaTime)
+                   * transform2D::Translate(-pivot.x, -pivot.y)
+                   * triangleMatrix;
 }
 
 

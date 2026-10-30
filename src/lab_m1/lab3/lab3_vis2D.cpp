@@ -110,7 +110,7 @@ void Lab3_Vis2D::FrameStart()
 
 void Lab3_Vis2D::Update(float deltaTimeSeconds)
 {
-    glm::ivec2 resolution = window->GetResolution();
+    glm::ivec2 resolution = window->props.resolution;
 
     // Sets the screen area where to draw - the left half of the window
     viewSpace = ViewportSpace(0, 0, resolution.x / 2, resolution.y);
@@ -167,9 +167,49 @@ void Lab3_Vis2D::DrawScene(glm::mat3 visMatrix)
 void Lab3_Vis2D::OnInputUpdate(float deltaTime, int mods)
 {
     // TODO(student): Move the logic window with W, A, S, D (up, left, down, right)
+	const float moveSpeed = 2.0f;
+
+	if (window->KeyHold(GLFW_KEY_W)) 
+		logicSpace.y += moveSpeed * deltaTime;
+
+	if (window->KeyHold(GLFW_KEY_A))
+		logicSpace.x -= moveSpeed * deltaTime;
+
+	if (window->KeyHold(GLFW_KEY_S))
+		logicSpace.y -= moveSpeed * deltaTime;
+
+	if (window->KeyHold(GLFW_KEY_D))
+		logicSpace.x += moveSpeed * deltaTime;
+
 
     // TODO(student): Zoom in and zoom out logic window with Z and X
+	float zoomDirection = 0.0f;
 
+	if (window->KeyHold(GLFW_KEY_Z))
+		zoomDirection -= 1.0f;
+
+	if (window->KeyHold(GLFW_KEY_X))
+		zoomDirection += 1.0f;
+
+	if (zoomDirection != 0.0f) {
+        float centerX = logicSpace.x + logicSpace.width / 2.0f;
+        float centerY = logicSpace.y + logicSpace.height / 2.0f;
+
+        float zoomFactor = std::exp(zoomDirection * deltaTime);
+
+        float newWidth = glm::clamp(
+            logicSpace.width * zoomFactor,
+            0.25f, 40.0f
+        );
+
+        float factor = newWidth / logicSpace.width;
+
+        logicSpace.width = newWidth;
+        logicSpace.height *= factor;
+
+        logicSpace.x = centerX - logicSpace.width / 2.0f;
+        logicSpace.y = centerY - logicSpace.height / 2.0f;
+    }
 }
 
 

@@ -48,9 +48,10 @@ void Lab4::Init()
     angularStepOX = 0;
     angularStepOY = 0;
     angularStepOZ = 0;
+    spinnerAngle = 0;
 
     // Sets the resolution of the small viewport
-    glm::ivec2 resolution = window->GetResolution();
+    glm::ivec2 resolution = window->props.resolution;
     miniViewportArea = ViewportArea(50, 50, resolution.x / 5.f, resolution.y / 5.f);
 }
 
@@ -78,6 +79,12 @@ void Lab4::RenderScene() {
     modelMatrix *= transform3D::RotateOY(angularStepOY);
     modelMatrix *= transform3D::RotateOZ(angularStepOZ);
     RenderMesh(meshes["box"], shaders["VertexNormal"], modelMatrix);
+
+    modelMatrix = transform3D::RotateOY(spinnerAngle);
+    modelMatrix *= transform3D::RotateOX(glm::radians(-35.2643897f));
+    modelMatrix *= transform3D::RotateOZ(glm::radians(45.0f));
+    modelMatrix *= transform3D::Translate(0.5f, 0.5f, 0.5f);
+    RenderMesh(meshes["box"], shaders["VertexNormal"], modelMatrix);
 }
 
 void Lab4::Update(float deltaTimeSeconds)
@@ -87,7 +94,7 @@ void Lab4::Update(float deltaTimeSeconds)
     glPolygonMode(GL_FRONT_AND_BACK, polygonMode);
 
     // Sets the screen area where to draw
-    glm::ivec2 resolution = window->GetResolution();
+    glm::ivec2 resolution = window->props.resolution;
     glViewport(0, 0, resolution.x, resolution.y);
 
     RenderScene();
@@ -97,6 +104,7 @@ void Lab4::Update(float deltaTimeSeconds)
     glViewport(miniViewportArea.x, miniViewportArea.y, miniViewportArea.width, miniViewportArea.height);
 
     // TODO(student): render the scene again, in the new viewport
+	RenderScene();
     DrawCoordinateSystem();
 }
 
@@ -114,7 +122,33 @@ void Lab4::FrameEnd()
 void Lab4::OnInputUpdate(float deltaTime, int mods)
 {
     // TODO(student): Add transformation logic
+	float moveStep = 2.0f * deltaTime;
+	float scaleStep = 0.5f * deltaTime;
+	float rotationStep = 1.0f * deltaTime;
 
+	if (window->KeyHold(GLFW_KEY_W)) translateZ -= moveStep;
+	if (window->KeyHold(GLFW_KEY_S)) translateZ += moveStep;
+	if (window->KeyHold(GLFW_KEY_A)) translateX -= moveStep;
+	if (window->KeyHold(GLFW_KEY_D)) translateX += moveStep;
+	if (window->KeyHold(GLFW_KEY_R)) translateY += moveStep;
+	if (window->KeyHold(GLFW_KEY_F)) translateY -= moveStep;
+
+	if (window->KeyHold(GLFW_KEY_1)) scaleX += scaleStep;
+	if (window->KeyHold(GLFW_KEY_2)) scaleX -= scaleStep;
+
+	scaleX = glm::max(scaleX, 0.1f);
+	scaleY = scaleX;
+	scaleZ = scaleX;
+
+	if (window->KeyHold(GLFW_KEY_3)) angularStepOX += rotationStep;
+	if (window->KeyHold(GLFW_KEY_4)) angularStepOX -= rotationStep;
+	if (window->KeyHold(GLFW_KEY_5)) angularStepOY += rotationStep;
+	if (window->KeyHold(GLFW_KEY_6)) angularStepOY -= rotationStep;
+	if (window->KeyHold(GLFW_KEY_7)) angularStepOZ += rotationStep;
+	if (window->KeyHold(GLFW_KEY_8)) angularStepOZ -= rotationStep;
+
+    if (window->KeyHold(GLFW_KEY_9)) spinnerAngle -= rotationStep;
+    if (window->KeyHold(GLFW_KEY_0)) spinnerAngle += rotationStep;
 }
 
 
@@ -138,6 +172,26 @@ void Lab4::OnKeyPress(int key, int mods)
     }
     
     // TODO(student): Add viewport movement and scaling logic
+	const int moveStep = 10;
+
+	if (key == GLFW_KEY_I) miniViewportArea.y += moveStep;
+	if (key == GLFW_KEY_J) miniViewportArea.x -= moveStep;
+	if (key == GLFW_KEY_K) miniViewportArea.y -= moveStep;
+	if (key == GLFW_KEY_L) miniViewportArea.x += moveStep;
+
+	if (key == GLFW_KEY_U || key == GLFW_KEY_O) {
+		float factor = (key == GLFW_KEY_U) ? 0.9f : 1.1f;
+
+		miniViewportArea.width = glm::max(
+			20,
+			static_cast<int>(miniViewportArea.width * factor)
+		);
+
+		miniViewportArea.height = glm::max(
+			20,
+			static_cast<int>(miniViewportArea.height * factor)
+		);
+	}
 }
 
 
