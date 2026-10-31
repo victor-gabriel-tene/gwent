@@ -189,14 +189,33 @@ The same lane geometry drives rendering, legal drop highlighting and hit tests.
 `Shape` calls the supplied `RenderMesh2D(mesh, modelMatrix, color)` overload for
 each element. `Box`, `Frame` and `Line` compose these basic shapes. Draw order,
 with depth testing disabled, puts the dragged card and modal screens on top.
-Every frame draws the scene directly; there are no draw-list caches or custom
-GPU buffers. Materials are solid RGB colors, with no textures or custom GLSL
-in Tema1.
+Every frame draws the scene directly; there are no draw-list caches. Board and
+card geometry use solid RGB colors and the supplied shaders.
 
-Labels use the supplied `gfxc::TextRenderer` and existing `Hack-Bold.ttf`. The
-helper owns its shader/font implementation inside the framework. `Label` converts
-the bottom-left logical origin to the helper's top-left origin, while `TextWidth`
-uses its character advances for centering. There is no custom font implementation.
+Labels use the Tema1-local `TextRenderer.h` adapter and existing `Hack-Bold.ttf`.
+It inherits the supplied `gfxc::TextRenderer` font loader, glyph textures and
+shader, preserving the font and layout. The adapter owns a small drawing buffer
+because the framework's buffers are private. Each glyph replaces its complete
+buffer data with `glBufferData(..., GL_STREAM_DRAW)` instead of updating the same
+busy storage with `glBufferSubData`. This uses the buffer API from Lab 2 and
+avoids per-character upload stalls observed on the M1 Mac. No shared framework
+files, shaders or font assets are changed. `Label` converts the bottom-left
+logical origin to the helper's top-left origin, while `TextWidth` uses its
+character advances for centering. There is no custom font implementation.
+
+Before/after measurements on the development Mac used the same Debug build
+settings, 2560x1440 framebuffer and VSync, with two seconds of warmup and five
+seconds of sampling per fixed scene:
+
+| Scene | Original FPS | Updated FPS |
+| --- | ---: | ---: |
+| Leader selection | 6.0 | 120.0 |
+| Table with cards | 4.1 | 103.6 |
+| Hover preview | 3.6 | 60.0 |
+| Rules overlay | 1.5 | 60.0 |
+
+The four before/after captures were pixel-identical. The existing scene checks
+also passed with the updated helper.
 
 Animations interpolate the cards' rectangles using elapsed time. The reveal
 animation scales width by `abs(cos(angle))` and switches from back to front at
@@ -206,7 +225,7 @@ card; the selected leader is drawn once larger behind its normal shape.
 Medic timing, leader action cost, tied-round crystal loss and explicit passing
 are documented choices where the assignment leaves details open. Medic is
 deliberately once per play, so it cannot endlessly recycle temporary cards each
-turn. Performance tuning is deferred until normal gameplay warrants it.
+turn.
 
 ## Verification
 

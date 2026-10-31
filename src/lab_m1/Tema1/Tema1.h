@@ -1,7 +1,7 @@
 #pragma once
 
 #include "components/simple_scene.h"
-#include "components/text_renderer.h"
+#include "lab_m1/Tema1/TextRenderer.h"
 #include "lab_m1/Tema1/GameRules.h"
 #include <map>
 #include <memory>
@@ -85,7 +85,7 @@ class Tema1 : public gfxc::SimpleScene {
 
     tema1::Game game;
     std::map<int, Visual> visuals;
-    std::unique_ptr<gfxc::TextRenderer> textRenderer;
+    std::unique_ptr<tema1::TextRenderer> textRenderer;
     glm::mat3 group = glm::mat3(1);
     State state = State::SelectLeader;
     float clock = 0, wait = 0, time = 0;

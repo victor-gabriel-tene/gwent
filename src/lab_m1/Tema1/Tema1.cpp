@@ -37,7 +37,7 @@ void Tema1::Init() {
     glDisable(GL_CULL_FACE);
     glfwSetWindowTitle(glfwGetCurrentContext(), "GWENT - The Card Table | EGC Tema 1");
     InitMeshes();
-    textRenderer.reset(new gfxc::TextRenderer(window->props.selfDir, W, H));
+    textRenderer.reset(new tema1::TextRenderer(window->props.selfDir, W, H));
     textRenderer->Load(PATH_JOIN(window->props.selfDir, "assets", "fonts", "Hack-Bold.ttf"), 32);
     Restart();
 }
