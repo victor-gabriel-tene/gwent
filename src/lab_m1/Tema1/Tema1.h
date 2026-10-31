@@ -43,9 +43,12 @@ class Tema1 : public gfxc::SimpleScene {
     void BeginNextRound();
     void SubmitAction(const tema1::Action& action);
     Rect LaneRect(int owner, tema1::Lane lane) const;
+    Rect HandRect(int owner) const;
+    Rect DeckRect(int owner) const;
+    Rect RulesRect() const;
+    Rect PopupButtonRect() const;
     Rect LeaderRect(int owner) const;
     Rect LeaderChoiceRect(int index) const;
-    Rect PassRect() const;
     tema1::Action DropAction(int id, glm::vec2 point) const;
     void Viewport();
     glm::vec2 Pointer(int x, int y) const;
@@ -67,8 +70,11 @@ class Tema1 : public gfxc::SimpleScene {
     void LeaderMenu();
     void LeaderPanel(int owner);
     void RulesOverlay();
+    void ResultPopup();
+    void InspectionPopup();
+    void PopupPanel(const std::string& title);
+    void PopupButton(const std::string& label);
     void Status(int owner);
-    void Deck(int owner);
     void Card(int id, Rect r, bool face, bool selected = false, float flip = 1);
     void CardBody(const tema1::Card& card, bool face);
     void Symbol(tema1::Type type, float x, float y, float size, glm::vec3 color);
@@ -80,6 +86,7 @@ class Tema1 : public gfxc::SimpleScene {
     void Line(float x1, float y1, float x2, float y2, float width, glm::vec3 color);
     void Label(const std::string& value, float x, float top, float size, glm::vec3 color);
     void Center(const std::string& value, float x, float top, float size, glm::vec3 color);
+    void Paragraph(const std::string& value, Rect bounds, float size, glm::vec3 color);
     float TextWidth(const std::string& value, float size) const;
     glm::vec3 TypeColor(tema1::Type type) const;
 
@@ -95,8 +102,7 @@ class Tema1 : public gfxc::SimpleScene {
     glm::vec2 mouse = glm::vec2(-1), grab = glm::vec2(0);
     int viewportX = 0, viewportY = 0, viewportW = 1600, viewportH = 900;
     int framebufferW = 1600, framebufferH = 900;
-    std::string message, detail;
-    std::vector<std::string> history;
+    std::string message;
     std::array<float, 2> hitFlash = {{0, 0}};
     bool help = false, inspection = false;
     int verifyStage = 0, verifyCard = -1, verifyHand = 0;

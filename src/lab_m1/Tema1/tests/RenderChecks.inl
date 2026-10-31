@@ -3,13 +3,12 @@
 void Tema1::PrepareRenderCheck() {
     if (!renderChecks.setup) {
         game.Reset(42);
-        visuals.clear(); history.clear(); revealed.clear();
+        visuals.clear(); revealed.clear();
         dragged = hovered = enemyCard = -1;
         help = inspection = false; hitFlash = {{0, 0}};
         selectedLeader = 1;
         SetState(State::Ready, 0);
         message = "YOUR TURN";
-        detail = "Play a card on its lane, call your leader, or pass the round.";
         for (int owner = 0; owner < 2; ++owner) {
             for (int n = 0; n < 6; ++n) {
                 const int id = game.players[owner].deck.back();
@@ -33,7 +32,7 @@ void Tema1::PrepareRenderCheck() {
         dragged = game.players[0].hand.front();
         Rect& card = visuals[dragged].at;
         grab = glm::vec2(card.w / 2, card.h / 2);
-        mouse = glm::vec2(820 + 220 * std::sin(renderChecks.elapsed * 1.3),
+        mouse = glm::vec2(800 + 220 * std::sin(renderChecks.elapsed * 1.3),
                           325 + 80 * std::sin(renderChecks.elapsed * .8));
         card.x = mouse.x - grab.x; card.y = mouse.y - grab.y;
     } else if (renderChecks.scenario == 3) {

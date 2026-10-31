@@ -96,10 +96,10 @@ struct Player {
     int hp = 30, shield = 0, crystals = 2;
     std::vector<int> deck, hand, board, discard;
     Leader leader = Leader::FoltestClear;
-    bool leaderUsed = false, passed = false;
+    bool leaderUsed = false;
 };
 struct Action {
-    enum Kind { PlayCard, UseLeader, Pass, Skip } kind;
+    enum Kind { PlayCard, UseLeader, Skip } kind;
     int card;
     Lane lane;
     int target;
@@ -183,7 +183,7 @@ class Game {
     }
     std::vector<Lane> LegalLanes(int owner, int id) const {
         std::vector<Lane> lanes;
-        if (!Running() || !Owner(owner) || players[owner].passed || !HandCard(owner, id)) return lanes;
+        if (!Running() || !Owner(owner) || !HandCard(owner, id)) return lanes;
         const Card& c = cards[id];
         if (c.type == Type::Decoy) {
             for (int target : players[owner].board)
@@ -202,20 +202,18 @@ class Game {
         return Owner(owner) && !committed[owner] && LegalPlacement(owner, id, lane, target);
     }
     bool CanUseLeader(int owner) const {
-        return Running() && Owner(owner) && !committed[owner] && !players[owner].passed && !players[owner].leaderUsed;
+        return Running() && Owner(owner) && !committed[owner] && !players[owner].leaderUsed;
     }
-    // Availability for a future turn; Pass and the current commitment are excluded.
+    // Availability for a future turn, independent of the current commitment.
     bool HasAction(int owner) const {
-        if (!Running() || !Owner(owner) || players[owner].passed) return false;
+        if (!Running() || !Owner(owner)) return false;
         if (!players[owner].leaderUsed) return true;
         for (int id : players[owner].hand) if (!LegalLanes(owner, id).empty()) return true;
         return false;
     }
     bool CanAct(int owner, const Action& a) const {
         if (!Running() || !Owner(owner) || committed[owner]) return false;
-        if (a.kind == Action::Skip) return players[owner].passed || !HasAction(owner);
-        if (players[owner].passed) return false;
-        if (a.kind == Action::Pass) return true;
+        if (a.kind == Action::Skip) return !HasAction(owner);
         if (a.kind == Action::UseLeader) return CanUseLeader(owner);
         return a.kind == Action::PlayCard && LegalPlacement(owner, a.card, a.lane, a.target);
     }
@@ -229,7 +227,6 @@ class Game {
             Move(a.card, owner, Zone::Board); c.lane = a.lane; c.suppressed = false;
             played[owner] = a.card; targets[owner] = a.target;
         } else if (a.kind == Action::UseLeader) players[owner].leaderUsed = true;
-        else if (a.kind == Action::Pass) players[owner].passed = true;
         if (hornTurn[owner] == turn) { hornTurn[owner] = -1; hornLane[owner] = Lane::None; }
         return true;
     }
@@ -246,7 +243,6 @@ class Game {
     }
     Action ChooseAction(int owner) {
         if (!Running() || !Owner(owner) || committed[owner]) return Action();
-        if (players[owner].passed) return Action(Action::Skip);
         std::vector<Action> choices;
         for (int id : players[owner].hand) if (!LegalLanes(owner, id).empty()) choices.emplace_back(Action::PlayCard, id);
         // A normal response always plays a random legal card. Leaders are a fallback.
@@ -370,7 +366,7 @@ class Game {
         if (result != Result::Playing || roundResult == Result::Playing || !roundScored || round >= 3) return false;
         for (int o = 0; o < 2; ++o) {
             const auto board = players[o].board; for (int id : board) Move(id, o, Zone::Discard);
-            players[o].hp = MaxHP; players[o].shield = 0; players[o].passed = false;
+            players[o].hp = MaxHP; players[o].shield = 0;
         }
         ++round; turn = 1; roundResult = Result::Playing; roundScored = false;
         hornTurn = {{-1, -1}}; hornLane = {{Lane::None, Lane::None}}; ClearTurn();

@@ -2,7 +2,7 @@
 
 A C++11/OpenGL implementation of the HP-based game from
 [EGC Tema 1, 2026](https://ocw.cs.pub.ro/courses/egc/teme/2026/01), including
-three battlefield lanes, all twelve card types, five selectable leaders, passing
+three battlefield lanes, all twelve card types, five selectable leaders
 and matches of up to three rounds. The flat board, cards, symbols and leader
 shapes use simple meshes and the framework's supplied rendering helpers.
 
@@ -39,8 +39,7 @@ TEMA1_SEED=42 ./build/release/bin/Release/GFXFramework
 | Release outside a legal destination | Animate back to hand without spending the action |
 | Backspace while dragging | Cancel the drag |
 | Click your leader panel | Use its once-per-match power instead of playing a card |
-| P, or Pass Round | Pass for the rest of the current round |
-| Hover over a visible card or leader | Show its description; cards also receive an enlarged sidebar preview |
+| Hover over a visible card or leader | Show its description in the right margin; cards also receive an enlarged preview |
 | H, or the Rules button during a match | Open/close the rules overlay and pause turn progression |
 | Click the rules overlay | Close it |
 | Continue, Enter or Space in Emhyr's inspection | Resume after reading the revealed cards |
@@ -55,7 +54,7 @@ The opponent places ordinary cards face down, then flips them before resolution.
 
 Both players begin with 30 HP, zero shield, two crystals and a ten-card opening
 hand from a shuffled 30-card deck. Each battlefield half has Melee, Ranged and
-Siege lanes. A card's upper-right badge shows its permitted lane: **M**, **R**,
+Siege lanes. A card's upper-right letter shows its permitted lane: **M**, **R**,
 **S**, or **\*** for any lane. Units have fixed printed lanes; Medic is Ranged.
 Frost, Fog and Rain occupy their corresponding lane. Other specials accept any
 friendly lane, subject to the Decoy target requirement.
@@ -86,10 +85,10 @@ Spy, weather, Clear Sky, War Horn and Scorch are temporary. Each loses one V
 after its activation, including suppressed activations or activations with no
 available target. Temporary V controls lifetime, except that Scorch also uses V
 as its cancellation threshold. Any board card reduced to V <= 0 is discarded.
-Square/diamond symbol frames distinguish permanent and temporary categories.
-Current effective V appears as a numeral and individual geometric units. Hover
+Small circle/triangle markers distinguish permanent and temporary categories.
+Current effective V appears as individual geometric units down the left edge. Hover
 previews show the effective V and distinguish base/lifetime and printed values
-when boosted. Boosted cards receive a green value/frame; suppressed cards receive
+when boosted. Boosted cards receive green value units; suppressed cards receive
 a crossed-out symbol.
 
 ## Leaders
@@ -113,14 +112,13 @@ the cards' stored V.
 
 ## Turn, round and match rules
 
-Each side takes one primary action per turn: play a card, use its unused leader,
-or pass. The enemy always chooses a random playable card when one is available,
+Each side takes one primary action per turn: play a card or use its unused leader.
+The enemy always chooses a random playable card when one is available,
 then chooses a legal lane and any Decoy target separately. With no playable card,
-it uses its unused leader or skips. It does not randomly pass instead of playing
-a card. A passed player takes no further primary actions in that
-round; its surviving board cards continue to activate while the opponent acts.
-A player with no usable card and no unused leader skips automatically. A Skip
-can become playable again after Spy or recovery; an explicit Pass stays locked.
+it uses its unused leader or skips. A player with no usable card and no unused
+leader skips automatically; its board still activates when the opponent acts.
+Spy or recovery can make that player able to act again. Voluntary passing is
+not part of this implementation.
 
 The shared phase order is:
 
@@ -146,16 +144,19 @@ The shared phase order is:
   lethal before Heal, so healing cannot revive a defeated player.
 - Zero HP loses the round; simultaneous lethal draws it. After the effect cycle,
   both hands being empty ends the round even if leaders remain unused. Recovery
-  or stealing during that cycle can prevent exhaustion. Both sides passing or
-  having no available action also ends the round. Compare HP; equal HP draws and
-  shield is not a tiebreaker. Passing/skipping alone triggers no extra effects.
+  or stealing during that cycle can prevent exhaustion. Both sides having no
+  available action also ends the round. Compare HP; equal HP draws and
+  shield is not a tiebreaker. Two skips trigger no extra effects.
 
 Losing a round costs one crystal. A drawn round costs both sides one crystal.
 At zero crystals a player loses the match; both reaching zero together draws it.
 A match therefore ends within three rounds.
+Equal HP draws the current round, while the match still depends on crystals.
+For example, a prior loss leaves crystals at 1:2; a drawn round then makes it
+0:1 and loses the match, even if both players finish that round at 30 HP.
 
 At each new round, all board cards enter their owners' discard piles, both sides
-return to 30 HP and zero shield, Pass and pending turn bonuses clear, and each
+return to 30 HP and zero shield, pending turn bonuses clear, and each
 player draws one card if its deck is not empty. Remaining hands, deck order,
 discard piles and spent leader powers carry over. No ordinary card draw occurs
 between turns.
@@ -172,7 +173,25 @@ between turns.
 - `tests/SceneChecks.inl`: opt-in tests through the actual scene handlers and GPU.
 
 The scene uses a uniformly scaled 1600x900 logical canvas with letterboxing and
-Retina-aware inverse pointer mapping. Each lane centers and scales its own cards.
+Retina-aware inverse pointer mapping. Both hands and every lane center on x=800.
+Lane labels sit inside each lane's left margin. Equal space on the right keeps
+card groups centered and prevents crowded rows from covering the labels.
+A thin frame encloses the central table
+with clear space around both hands. Compact matching information rows show
+leaders, crystals, HP and shield. Shield has thirty empty segments even at zero,
+filling blue as it grows; values over thirty add rows without capping gameplay.
+Leader hover uses a warm circular backdrop and slight shape scaling; used leaders
+remain grey. The Rules button has a subtle fill, thin brass border and gold hover
+highlight. Its overlay separates the card reference, effect order and three short
+groups of general rules, with controls in a single footer line.
+Round, match and revealed-card popups share a warm panel, thin brass frame,
+gold heading, quiet divider and one action button. Result rows place each stat
+label between the player's and opponent's values on a shared baseline.
+Round results show HP; match results show the remaining crystals instead of HP.
+When a drawn round ends the match, the popup identifies the final round as drawn.
+Deck rectangles are hidden, with the shared side positions retained
+as dealing animation origins. Hover previews use
+the empty right margin without covering the battlefield. Each lane scales its own cards.
 Stable card IDs preserve animation continuity through hand transfers and recovery.
 The same lane geometry drives rendering, legal drop highlighting and hit tests.
 
@@ -222,7 +241,7 @@ animation scales width by `abs(cos(angle))` and switches from back to front at
 halfway, the orthographic silhouette of a rotating card. Destruction shrinks the
 card; the selected leader is drawn once larger behind its normal shape.
 
-Medic timing, leader action cost, tied-round crystal loss and explicit passing
+Medic timing, leader action cost and tied-round crystal loss
 are documented choices where the assignment leaves details open. Medic is
 deliberately once per play, so it cannot endlessly recycle temporary cards each
 turn.
@@ -240,7 +259,7 @@ clang++ -std=c++11 -Wall -Wextra -pedantic -fsanitize=address,undefined \
 
 They cover deck composition, lane legality, one-action enforcement, recurrence,
 weather snapshots, cancellation, Horn expiry, recovery, all five leaders, hidden
-information, passing, crystal loss, round persistence and 1,000 complete seeded
+information, forced skipping/exhaustion, crystal loss, round persistence and 1,000 complete seeded
 matches. Ownership/value invariants are checked after resolution phases.
 Regression scenarios also check every Decoy target type and replacement position,
 Medic replay, card-first enemy responses and empty hands with unused leaders.

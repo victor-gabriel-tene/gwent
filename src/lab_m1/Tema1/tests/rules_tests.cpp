@@ -71,12 +71,13 @@ void OpeningAndLegality() {
         Expect(phases[i] == expected[i] && PhaseName(phases[i])[0], "prescribed phase ordering");
     game.Empty();
     const int unit = game.Add(0, Type::Damage, 3, Zone::Hand, Lane::Siege);
+    Expect(!game.Commit(0, Action(Action::Skip)), "cannot skip a playable card");
     Expect(!game.CanPlay(1, unit, Lane::Siege) && !game.CanPlay(0, -1, Lane::Siege), "owner and ID validation");
     Expect(!game.CanPlay(0, unit, Lane::Melee) && !game.CanPlay(0, unit, Lane::Any)
         && !game.CanAct(0, Action(Action::PlayCard, unit, Lane::None)), "wrong and non-board lanes rejected");
     Expect(game.Play(0, unit, Lane::Siege), "correct lane commits");
     const int extra = game.Add(0, Type::Shield, 1, Zone::Hand, Lane::Siege);
-    Expect(!game.Play(0, extra, Lane::Siege) && !game.Commit(0, Action(Action::Pass)), "one primary action per turn");
+    Expect(!game.Play(0, extra, Lane::Siege) && !game.Commit(0, Action(Action::Skip)), "one primary action per turn");
     Expect(game.cards[unit].lane == Lane::Siege && game.AnyCommitted(), "lane and turn context");
     game.Empty();
     for (const auto& entry : {std::make_pair(Type::Frost, Lane::Melee), std::make_pair(Type::Fog, Lane::Ranged),
@@ -404,8 +405,8 @@ void Leaders() {
     game.Resolve(Effect::Leaders); game.Resolve(Effect::Scorch);
     Expect(game.cards[doomed].zone == Zone::Discard, "leader destruction precedes scorch source capture");
 }
-void RoundsAndPassing() {
-    section = "rounds and passing";
+void RoundsAndExhaustion() {
+    section = "rounds and exhaustion";
     Game game; game.Empty(); game.players[0].hp = game.players[1].hp = 1;
     game.Add(0, Type::Damage, 1, Zone::Board, Lane::Melee); game.Add(1, Type::Damage, 1, Zone::Board, Lane::Melee);
     game.Add(0, Type::Heal, 3, Zone::Board, Lane::Ranged);
@@ -432,6 +433,21 @@ void RoundsAndPassing() {
            "empty hands end round even with both leaders unused");
     game.Empty(); EnableLeader(game, 0, Leader::Emhyr); EnableLeader(game, 1, Leader::FoltestClear);
     game.FinishTurn(); Expect(game.roundResult == Result::Draw, "equal HP exhaustion draws with unused leaders");
+    // Reproduce the reported loss: lose the first round, then draw at 30 HP.
+    game.Empty(); game.players[0].hp = 0; game.players[1].hp = 5;
+    game.FinishTurn();
+    Expect(game.roundResult == Result::EnemyWin && game.players[0].crystals == 1
+        && game.players[1].crystals == 2, "first loss leaves crystals at one versus two");
+    Expect(game.NextRound() && game.players[0].hp == 30 && game.players[1].hp == 30,
+           "next round restores both HP equally");
+    game.FinishTurn();
+    Expect(game.roundResult == Result::Draw && game.result == Result::EnemyWin
+        && game.players[0].crystals == 0 && game.players[1].crystals == 1,
+           "equal HP draws the round; prior crystal deficit loses the match");
+    game.FinishTurn();
+    Expect(game.players[0].hp == 30 && game.players[1].hp == 30
+        && game.players[0].crystals == 0 && game.players[1].crystals == 1,
+           "finished match preserves final HP and scores each round once");
     game.Empty();
     const int lastMedic = game.Add(0, Type::Medic, 2, Zone::Hand, Lane::Ranged);
     const int recovered = game.Add(0, Type::Damage, 1, Zone::Discard, Lane::Melee);
@@ -457,28 +473,27 @@ void RoundsAndPassing() {
     Expect(game.players[0].hand.size() == hand0 + 1 && game.players[1].hand.size() == hand1 + 1
         && game.cards[top0].zone == Zone::Hand && game.cards[top1].zone == Zone::Hand, "round two draws exactly one per preserved hand");
     Expect(game.players[0].leaderUsed && game.players[0].leader == Leader::Emhyr && !game.NextRound(), "leader use persists and active round cannot advance");
-    game.Empty(); KeepPlaying(game); const int survivor = game.Add(0, Type::Damage, 2, Zone::Board, Lane::Melee);
-    const int reply = game.Add(1, Type::Damage, 1, Zone::Hand, Lane::Melee); EnableLeader(game, 0, Leader::Emhyr);
-    Expect(game.Commit(0, Action(Action::Pass)) && !game.AnyCommitted(), "pass is not a resolving action");
-    Expect(!game.CanUseLeader(0) && !game.Play(0, game.players[0].hand.front(), Lane::Ranged), "passed side cannot act");
-    Expect(game.Play(1, reply, Lane::Melee), "opponent may act against passed side"); ResolveTurn(game);
-    Expect(game.players[0].passed && game.cards[survivor].zone == Zone::Board && game.players[1].hp == 28 && game.players[0].hp == 29,
-           "passed board keeps resolving");
-    Expect(game.Commit(0, Action(Action::Skip)) && game.Commit(1, Action(Action::Pass)), "remaining side can finish round");
-    Expect(!game.AnyCommitted(), "non-playing actions do not trigger extra cycle"); game.FinishTurn();
-    Expect(game.roundResult == Result::PlayerWin && game.players[1].hp == 28, "both passed settles HP without extra activation");
+    game.Empty(); EnableLeader(game, 0, Leader::Emhyr);
+    Expect(!game.Commit(0, Action(Action::Skip)), "cannot skip an available leader");
+    game.Empty(); game.Add(0, Type::Damage, 2, Zone::Board, Lane::Melee);
+    game.players[1].hp = 29;
+    Expect(game.Commit(0, Action(Action::Skip)) && game.Commit(1, Action(Action::Skip)), "both unavailable sides skip");
+    Expect(!game.AnyCommitted(), "two skips do not trigger an effect cycle"); game.FinishTurn();
+    Expect(game.roundResult == Result::PlayerWin && game.players[1].hp == 29, "exhaustion settles HP without extra activation");
     game.Empty(); game.Add(0, Type::Spy, 2, Zone::Board, Lane::Melee);
+    game.Add(0, Type::Damage, 2, Zone::Board, Lane::Melee);
     const int enemyPlay = game.Add(1, Type::Damage, 1, Zone::Hand, Lane::Melee);
     const int stolen = game.Add(1, Type::Heal, 1, Zone::Hand, Lane::Ranged);
-    Expect(game.Commit(0, Action(Action::Skip)) && !game.players[0].passed, "forced skip is not a locked round pass");
+    Expect(game.Commit(0, Action(Action::Skip)), "unavailable side automatically skips");
     Expect(game.Play(1, enemyPlay, Lane::Melee), "opponent acts while side skips"); ResolveTurn(game);
     Expect(game.cards[stolen].owner == 0 && game.CanPlay(0, stolen, Lane::Ranged), "spy recovery enables skipped side");
+    Expect(game.players[1].hp == 28 && game.players[0].hp == 29, "both boards resolve when only one side acts");
     game.Empty(); game.Add(0, Type::Decoy, 1, Zone::Hand); game.Add(1, Type::Decoy, 1, Zone::Hand); game.FinishTurn();
     Expect(game.roundResult == Result::Draw, "two unusable decoys cannot stall exhaustion");
     game.Reset(7);
     Expect(game.turn == 1 && game.round == 1 && game.result == Result::Playing && game.roundResult == Result::Playing
         && game.players[0].hp == 30 && game.players[0].shield == 0 && game.players[0].crystals == 2
-        && !game.players[0].passed && !game.players[0].leaderUsed && game.players[0].discard.empty() && game.Invariant(),
+        && !game.players[0].leaderUsed && game.players[0].discard.empty() && game.Invariant(),
            "restart clears all prior match state");
 }
 void SeededMatches() {
@@ -509,7 +524,7 @@ void SeededMatches() {
 }  // namespace
 int main() {
     try {
-        OpeningAndLegality(); CoreRecurrence(); WeatherAndClear(); ScorchAndHorn(); Recovery(); EnemyResponses(); Leaders(); RoundsAndPassing(); SeededMatches();
+        OpeningAndLegality(); CoreRecurrence(); WeatherAndClear(); ScorchAndHorn(); Recovery(); EnemyResponses(); Leaders(); RoundsAndExhaustion(); SeededMatches();
         std::cout << "PASS: " << checks << " checks, including all advanced rules and 1000 complete seeded matches\n";
     } catch (const std::exception& error) {
         std::cerr << "FAIL: " << error.what() << '\n'; return 1;

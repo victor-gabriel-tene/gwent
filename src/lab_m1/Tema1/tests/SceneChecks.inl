@@ -44,14 +44,14 @@ void Tema1::VerifyScene(const char* directory) {
     auto center = [](Rect r) { return glm::vec2(r.x + r.w / 2, r.y + r.h / 2); };
     auto ready = [this]() { return state == State::Ready && clock > .35f; };
     auto settleFixture = [this]() {
-        visuals.clear(); history.clear(); revealed.clear(); inspection = help = false;
+        visuals.clear(); revealed.clear(); inspection = help = false;
         enemyCard = dragged = hovered = -1; effectIndex = 0;
         hitFlash = {{0, 0}}; Layout(); Animate(1); SetState(State::Ready, 0);
     };
     auto winningPlay = [this, &settleFixture, &play, &center]() {
-        game.players[0].passed = false;
-        game.players[1].passed = true;
-        game.Add(0, Type::Damage, 30, Zone::Board, Lane::Melee);
+        game.players[1].leaderUsed = true;
+        game.players[1].shield = 0;
+        game.Add(0, Type::Damage, 60, Zone::Board, Lane::Melee);
         const int id = game.Add(0, Type::Damage, 1, Zone::Hand, Lane::Siege);
         settleFixture();
         play(id, center(LaneRect(0, Lane::Siege)));
@@ -82,7 +82,25 @@ void Tema1::VerifyScene(const char* directory) {
             }
         }
         expect(found, "seeded opening enemy has a legal card response");
-        for (glm::vec2 logical : {glm::vec2(0), glm::vec2(820, 325), glm::vec2(1600, 900)}) {
+        for (int owner = 0; owner < 2; ++owner) {
+            const Rect hand = HandRect(owner);
+            const auto& ids = game.players[owner].hand;
+            const Rect first = visuals[ids.front()].at, last = visuals[ids.back()].at;
+            expect(std::abs((first.x+last.x+last.w)/2-W/2) < .1f, "hand group centered on screen");
+            for (int id : ids) {
+                const Rect c = visuals[id].at;
+                expect(c.x >= hand.x && c.x+c.w <= hand.x+hand.w && c.y >= hand.y && c.y+c.h <= hand.y+hand.h,
+                       "hand cards contained with window inset");
+            }
+            expect(hand.y >= 24 && hand.y+hand.h <= H-24, "hands clear top and bottom edges");
+        }
+        const Rect origin = visuals[game.players[1].hand.back()].from, deck = DeckRect(1);
+        expect(std::abs(origin.x-deck.x) < .1f && std::abs(origin.y-deck.y) < .1f
+            && std::abs(origin.w-deck.w) < .1f, "draw animation starts at shared dealing origin");
+        const int before = game.turn;
+        OnKeyPress(GLFW_KEY_P,0);
+        expect(state == State::Ready && game.turn == before && !game.committed[0], "P has no action");
+        for (glm::vec2 logical : {glm::vec2(0), glm::vec2(800, 325), glm::vec2(1600, 900)}) {
             const auto p = pixel(logical);
             expect(glm::length(Pointer(p.x, p.y) - logical) < 3, "Retina coordinate round trip");
         }
@@ -90,7 +108,15 @@ void Tema1::VerifyScene(const char* directory) {
         expect(verifyCard >= 0, "opening fixture has a unit");
         verifyHand = static_cast<int>(game.players[0].hand.size());
         capture("03-opening");
-        play(verifyCard, glm::vec2(1480, 450));
+        const glm::vec2 savedMouse = mouse;
+        mouse = center(RulesRect()); Render(); capture("03e-rules-button-hover");
+        mouse = center(LeaderRect(0)); Render(); capture("03a-leader-hover"); mouse = savedMouse;
+        const int savedShield = game.players[0].shield;
+        game.players[0].shield = 5; Render(); capture("03c-shield-partial");
+        game.players[0].shield = 35; Render(); capture("03d-shield-overflow");
+        game.players[0].shield = savedShield;
+        hovered = verifyCard; Render(); capture("03b-hover-preview"); hovered = -1;
+        play(verifyCard, glm::vec2(LaneRect(0,Lane::Melee).x+LaneRect(0,Lane::Melee).w+100,450));
         expect(state == State::Return && game.cards[verifyCard].zone == Zone::Hand, "outside drop returns to hand");
         ++verifyStage;
     } else if (verifyStage == 3 && ready()) {
@@ -103,7 +129,8 @@ void Tema1::VerifyScene(const char* directory) {
         capture("04-invalid-return");
         const Lane lane = game.cards[verifyCard].printedLane;
         // The 4px lane gap is invalid, as are the opposing half and letterbox margins.
-        expect(!game.CanAct(0, DropAction(verifyCard, glm::vec2(820, 365))), "lane gap rejected");
+        const Rect melee = LaneRect(0,Lane::Melee), ranged = LaneRect(0,Lane::Ranged);
+        expect(!game.CanAct(0, DropAction(verifyCard, glm::vec2(center(melee).x,(melee.y+ranged.y+ranged.h)/2))), "lane gap rejected");
         expect(!game.CanAct(0, DropAction(verifyCard, center(LaneRect(1, lane)))), "enemy lane rejected");
         expect(!game.CanAct(0, DropAction(verifyCard, glm::vec2(-10, -10))), "letterbox point rejected");
         play(verifyCard, center(LaneRect(0, lane)));
@@ -115,7 +142,9 @@ void Tema1::VerifyScene(const char* directory) {
         OnKeyPress(GLFW_KEY_H, 0); expect(help, "rules overlay opens");
         ++verifyStage;
     } else if (verifyStage == 6) {
-        capture("06-rules"); OnKeyPress(GLFW_KEY_H, 0);
+        capture("06-rules"); click(RulesRect()); expect(!help,"click closes rules");
+        click(RulesRect()); expect(help,"shared rules rectangle opens overlay");
+        OnKeyPress(GLFW_KEY_H, 0);
         glfwSetWindowSize(glfwGetCurrentContext(), 1000, 800);
         ++verifyStage;
     } else if (verifyStage == 7) {
@@ -125,6 +154,8 @@ void Tema1::VerifyScene(const char* directory) {
             expect(glm::length(Pointer(p.x, p.y) - logical) < 3, "resized lane pointer mapping");
         }
         capture("07-resized");
+        OnKeyPress(GLFW_KEY_H,0); Render(); capture("07c-resized-rules"); OnKeyPress(GLFW_KEY_H,0);
+        hovered = game.players[0].hand.front(); Render(); capture("07b-resized-preview"); hovered = -1;
         game.Empty(123);
         for (int owner = 0; owner < 2; ++owner) for (int n = 0; n < 24; ++n)
             game.Add(owner, static_cast<Type>(n % 3), n % 3 + 1, Zone::Board, Lane::Melee);
@@ -136,14 +167,17 @@ void Tema1::VerifyScene(const char* directory) {
             const Rect r = LaneRect(owner, Lane::Melee);
             for (int id : game.players[owner].board) {
                 const Rect c = visuals[id].at;
-                expect(c.x >= r.x + 78 && c.x + c.w <= r.x + r.w && c.y >= r.y && c.y + c.h <= r.y + r.h,
-                       "crowded lane cards stay inside lane");
+                expect(c.x >= r.x + lanePadding && c.x + c.w <= r.x + r.w - lanePadding && c.y >= r.y && c.y + c.h <= r.y + r.h,
+                       "crowded lane cards clear labels and keep equal side margins");
             }
+            const auto& ids = game.players[owner].board;
+            const Rect first = visuals[ids.front()].at, last = visuals[ids.back()].at;
+            expect(std::abs((first.x+last.x+last.w)/2-W/2) < .1f,"crowded lane centered on screen");
         }
         glfwSetWindowSize(glfwGetCurrentContext(), 1280, 720);
         game.Empty(321);
         game.players[0].leader = Leader::Emhyr; game.players[0].leaderUsed = false;
-        game.players[1].leader = Leader::Francesca; game.players[1].passed = true;
+        game.players[1].leader = Leader::Francesca; game.players[1].leaderUsed = true;
         verifyCard = game.Add(0, Type::Damage, 3, Zone::Board, Lane::Melee);
         game.Add(0, Type::Shield, 2, Zone::Board, Lane::Siege);
         game.Add(0, Type::Medic, 2, Zone::Board, Lane::Ranged);
@@ -152,7 +186,7 @@ void Tema1::VerifyScene(const char* directory) {
         for (Type type : {Type::Decoy, Type::Medic, Type::Frost, Type::Fog, Type::Rain, Type::Horn,
                           Type::Scorch, Type::Clear, Type::Spy})
             game.Add(0, type, type == Type::Clear || type == Type::Decoy ? 1 : 2, Zone::Hand);
-        for (int i = 0; i < 3; ++i) game.Add(1, static_cast<Type>(i), 2, Zone::Hand, static_cast<Lane>(i));
+        for (int i = 0; i < 6; ++i) game.Add(1, Type::Shield, 1, Zone::Hand, Lane::Siege);
         settleFixture(); ++verifyStage;
     } else if (verifyStage == 9 && ready()) {
         capture("09-advanced-cards");
@@ -184,9 +218,9 @@ void Tema1::VerifyScene(const char* directory) {
         expect(revealed.size() == 3, "Emhyr reveals three distinct enemy cards");
         capture("12-emhyr-inspection");
         const int before = game.turn;
-        OnKeyPress(GLFW_KEY_P, 0);
-        expect(inspection && game.turn == before, "inspection blocks other actions");
-        click(Rect(690, 225, 220, 48)); expect(!inspection, "inspection Continue closes modal");
+        click(visuals[game.players[0].hand.front()].at);
+        expect(inspection && game.turn == before && dragged < 0, "inspection blocks card selection");
+        click(PopupButtonRect()); expect(!inspection, "inspection Continue closes modal");
         ++verifyStage;
     } else if (verifyStage == 13 && ready()) {
         capture("13-used-leader-known-hand");
@@ -197,13 +231,13 @@ void Tema1::VerifyScene(const char* directory) {
         expect(state == State::Ready && !game.committed[0], "used leader cannot spend another action");
         game.Add(0, Type::Heal, 2, Zone::Deck, Lane::Siege);
         game.Add(1, Type::Shield, 2, Zone::Deck, Lane::Siege);
-        verifyHand = static_cast<int>(game.players[0].hand.size());
-        verifyCard = static_cast<int>(game.players[1].hand.size());
-        click(PassRect()); expect(game.players[0].passed, "Pass button locks round");
+        winningPlay();
         ++verifyStage;
     } else if (verifyStage == 14 && state == State::RoundOver) {
         capture("14-round-intermission");
-        click(Rect(650, 316, 300, 55));
+        verifyHand = static_cast<int>(game.players[0].hand.size());
+        verifyCard = static_cast<int>(game.players[1].hand.size());
+        click(PopupButtonRect());
         expect(state == State::Deal && game.round == 2, "Next round begins one-card deal");
         ++verifyStage;
     } else if (verifyStage == 15 && ready()) {
@@ -222,7 +256,7 @@ void Tema1::VerifyScene(const char* directory) {
         capture("16-round-two-result");
         verifyHand = static_cast<int>(game.players[0].hand.size());
         verifyCard = static_cast<int>(game.players[1].hand.size());
-        click(Rect(650, 316, 300, 55)); ++verifyStage;
+        click(PopupButtonRect()); ++verifyStage;
     } else if (verifyStage == 17 && ready()) {
         expect(game.round == 3 && game.players[0].hand.size() == static_cast<size_t>(verifyHand + 1)
             && game.players[1].hand.size() == static_cast<size_t>(verifyCard + 1), "exactly one card each in round 3");
@@ -241,7 +275,6 @@ void Tema1::VerifyScene(const char* directory) {
             && !game.players[0].leaderUsed && game.players[0].crystals == 2, "fresh match resets all match state");
         capture("20-restarted-opening");
         game.Empty(456);
-        game.players[1].passed = true;
         verifyCard = game.Add(0, Type::Fog, 2, Zone::Board);
         verifyHand = game.Add(0, Type::Decoy, 1, Zone::Hand);
         game.Add(0, Type::Damage, 1, Zone::Hand, Lane::Melee);
@@ -257,8 +290,41 @@ void Tema1::VerifyScene(const char* directory) {
             && game.cards[verifyHand].zone == Zone::Board && game.cards[verifyHand].lane == Lane::Ranged,
             "Decoy replaces friendly weather and restores it to hand");
         capture("21-decoy-special-return");
+        // Reproduce the reported first-round loss, then equal-HP match loss.
+        game.Empty(789); game.players[0].hp = 0; game.players[1].hp = 5;
+        game.FinishTurn(); NextTurn();
+        expect(state == State::RoundOver && game.players[0].crystals == 1
+            && game.players[1].crystals == 2,"reported first round loses one crystal");
+        Render(); capture("22-round-lost");
+        click(PopupButtonRect());
+        expect(state == State::Deal,"shared popup button starts next round");
+        ++verifyStage;
+    } else if (verifyStage == 23 && state == State::Over) {
+        expect(game.roundResult == Result::Draw && game.result == Result::EnemyWin
+            && game.players[0].hp == 30 && game.players[1].hp == 30
+            && game.players[0].crystals == 0 && game.players[1].crystals == 1,
+            "equal HP draws round but zero crystals loses match");
+        capture("23-equal-hp-match-loss");
+        glfwSetWindowSize(glfwGetCurrentContext(),1000,800);
+        ++verifyStage;
+    } else if (verifyStage == 24) {
+        capture("24-resized-match-loss");
+        click(PopupButtonRect());
+        expect(state == State::SelectLeader,"shared popup button restarts match");
+        game.Empty(); game.FinishTurn(); NextTurn();
+        expect(state == State::RoundOver && game.roundResult == Result::Draw,"equal opening crystals keep a drawn round in play");
+        Render(); capture("25-round-drawn");
+        game.Empty(); game.players[0].crystals = game.players[1].crystals = 1;
+        game.FinishTurn(); NextTurn();
+        expect(state == State::Over && game.result == Result::Draw,"both last crystals lost draws match");
+        Render(); capture("26-match-drawn");
+        game.Empty(); game.players[1].crystals = 1;
+        game.FinishTurn(); NextTurn();
+        expect(state == State::Over && game.result == Result::PlayerWin,"crystal lead wins match after equal HP draw");
+        Render(); capture("27-drawn-round-match-win");
         std::cout << "PASS: advanced scene checks (leader selection/highlight, lanes, invalid/valid drag, crowded layout, "
-                     "Medic/Decoy including special targets, leader inspection/use, help, Retina/resize, three rounds, crystals, restart)\n" << std::flush;
+                     "Medic/Decoy including special targets, leader inspection/use, help, Retina/resize, three rounds, "
+                     "crystals, restart, result popups and equal-HP match outcomes)\n" << std::flush;
         ++verifyStage; window->Close();
     }
     if (verifyStage == 5 && state == State::Reveal && verifyHand != -1) {
