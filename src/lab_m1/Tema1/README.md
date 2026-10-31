@@ -163,14 +163,70 @@ between turns.
 
 ## Implementation map
 
-- `GameRules.h`: graphics-independent cards, lanes, legal actions, deck creation,
-  effect phases, leaders, round/match outcomes and ownership invariants.
-- `Tema1.h` / `Tema1.cpp`: scene state machine, shared hit rectangles, dragging,
-  stable animated layouts, reveal/inspection flow and round transitions.
-- `Tema1Presentation.inl`: cards and leaders, six lane rows, drop
-  highlights, status/crystals, menus and overlays.
-- `tests/rules_tests.cpp`: deterministic rule scenarios and 1,000 seeded matches.
-- `tests/SceneChecks.inl`: opt-in tests through the actual scene handlers and GPU.
+| Files | Responsibility |
+| --- | --- |
+| `game_config.h` | Starting HP/crystals, hand sizes, round limits and shared rule values |
+| `game_types.h` / `.cpp` | Cards, players, actions, events, names, descriptions and phase order |
+| `game_rules.h` / `.cpp` | Match state, deck recipe, legal actions, ownership, turns and rounds |
+| `game_effects.cpp` | Leader powers and individual card resolution phases |
+| `Tema1.h` / `Tema1.cpp` | Framework scene, initialization and turn/round state machine |
+| `input.cpp` | Mouse/keyboard callbacks, drag cancellation and legal drops |
+| `layout.cpp` | Shared rectangles, pointer mapping, centered card layouts and animation |
+| `drawing.cpp` | Basic meshes, shape transforms and text drawing helpers |
+| `cards.cpp` | Card faces, geometric symbols and hover previews |
+| `board.cpp` | Battlefield, legal drop highlights and status indicators |
+| `leaders.cpp` | Leader selection, panels and hover descriptions |
+| `symbols.cpp` | Small drawing functions for each card and leader symbol |
+| `meshes.cpp` | Basic unit meshes and triangle indices |
+| `rendering.cpp` | Scene drawing order and card reveal/destruction rendering |
+| `geometry.h` | Shared rectangles, centers, expansion and text placements |
+| `rules_reference.h` / `.cpp` | Rules reference sections as content data |
+| `overlays.cpp` | Rules, results and revealed-card popups |
+| `config/` and `palette.cpp` | Canvas/layout dimensions, animation timing, assets and palette |
+| `text_renderer.h` / `.cpp` | Existing glyph drawing buffer adapter |
+| `tests/rules_tests.cpp` | Deterministic rule scenarios and 1,000 seeded matches |
+| `tests/scene_checks.cpp` | Opt-in checks through the actual input handlers and GPU |
+
+Implementations compile as ordinary `.cpp` files; no source fragments are
+included by another source file. Rules depend only on the C++11 standard
+library. The scene keeps the same simple callbacks, meshes and transforms used
+in labs 1–4.
+
+Runtime code reads named values from focused configuration files:
+
+- `config/cards.h`: face markings, value indicators, selection frame and preview.
+- `config/symbols.h`: named proportions for every card and leader symbol.
+- `config/board.h`, `config/leaders.h`, `config/overlays.h`: screen-specific layout.
+- `config/scene.h`: base canvas, card dimensions, shared margins and derived positions.
+- `config/animation.h`: animation durations and reveal timing.
+- `config/palette.h` and `palette.cpp`: shared colors and type/leader palettes.
+- `config/drawing.h`: mesh topology, glyph buffer layout and drawing settings.
+- `config/deck.h`: card groups, values, copies and allowed lanes.
+- `config/text.h` and `rules_reference.cpp`: UI labels and rules content.
+
+Dependent values are calculated from their source: card aspect ratios, hand and
+board spacing, enemy hand position, centered health/shield segments, leader menu
+spacing and preview sizes. The rules reference iterates its sections and lines;
+there is no fixed three-by-four rendering loop.
+
+Numeric literals belong in these data definitions. Rendering and game-flow
+functions use names and derived geometry. Ordinary mathematical identities,
+indices, empty/zero states and the coefficients of the named cubic smoothstep
+formula remain directly expressed. Test fixtures retain explicit expected values
+so they independently check the configured defaults.
+
+The local `.clang-format` uses Google's C++ style with two-space indentation,
+80-column lines and braces around control-flow bodies. Blank lines separate
+guard clauses, setup, drawing stages, and state changes; the formatter preserves
+this logical spacing. Variables use
+`snake_case`, class members end in `_`, and constants/enumerators use `kNames`.
+`Tema1.h` and `Tema1.cpp` keep the framework's existing scene name; the other
+filenames use lowercase words. Format only this homework from the repository root:
+
+```sh
+clang-format -i src/lab_m1/Tema1/*.h src/lab_m1/Tema1/*.cpp \
+  src/lab_m1/Tema1/config/*.h src/lab_m1/Tema1/tests/*.cpp
+```
 
 The scene uses a uniformly scaled 1600x900 logical canvas with letterboxing and
 Retina-aware inverse pointer mapping. Both hands and every lane center on x=800.
@@ -199,27 +255,27 @@ The same lane geometry drives rendering, legal drop highlighting and hit tests.
 
 - **Lab 1:** `SimpleScene` callbacks, elapsed-time updates and mouse/keyboard input.
 - **Lab 2:** rectangle, triangle and circle meshes constructed from vertices and
-  triangle indices with `Mesh::InitFromData`. Each is created once in `InitMeshes`.
+  triangle indices with `Mesh::InitFromData`. Each is created once in `InitMeshes` in `meshes.cpp`.
 - **Lab 3:** the completed `transform2D` translation, rotation and scale matrices;
   an orthographic camera; model matrices composed around card/leader centers.
 - **Labs 3/4:** viewport coordinates and uniform scaling. The inverse mapping
   converts window mouse coordinates through Retina pixels to logical board space.
 
-`Shape` calls the supplied `RenderMesh2D(mesh, modelMatrix, color)` overload for
-each element. `Box`, `Frame` and `Line` compose these basic shapes. Draw order,
+`DrawShape` calls the supplied `RenderMesh2D(mesh, modelMatrix, color)` overload for
+each element. `DrawBox`, `DrawFrame` and `DrawLine` compose these basic shapes. Draw order,
 with depth testing disabled, puts the dragged card and modal screens on top.
 Every frame draws the scene directly; there are no draw-list caches. Board and
 card geometry use solid RGB colors and the supplied shaders.
 
-Labels use the Tema1-local `TextRenderer.h` adapter and existing `Hack-Bold.ttf`.
+Labels use the Tema1-local `text_renderer.h` / `text_renderer.cpp` adapter and existing `Hack-Bold.ttf`.
 It inherits the supplied `gfxc::TextRenderer` font loader, glyph textures and
 shader, preserving the font and layout. The adapter owns a small drawing buffer
 because the framework's buffers are private. Each glyph replaces its complete
 buffer data with `glBufferData(..., GL_STREAM_DRAW)` instead of updating the same
 busy storage with `glBufferSubData`. This uses the buffer API from Lab 2 and
 avoids per-character upload stalls observed on the M1 Mac. No shared framework
-files, shaders or font assets are changed. `Label` converts the bottom-left
-logical origin to the helper's top-left origin, while `TextWidth` uses its
+files, shaders or font assets are changed. `DrawLabel` converts the bottom-left
+logical origin to the helper's top-left origin, while `MeasureTextWidth` uses its
 character advances for centering. There is no custom font implementation.
 
 Before/after measurements on the development Mac used the same Debug build
@@ -248,12 +304,23 @@ turn.
 
 ## Verification
 
-Standalone rules checks require only a C++11 compiler:
+Standalone rules checks have their own CMake target and require no graphics
+libraries:
+
+```sh
+cmake -S src/lab_m1/Tema1/tests -B /tmp/tema1-rules-build
+cmake --build /tmp/tema1-rules-build
+ctest --test-dir /tmp/tema1-rules-build --output-on-failure
+```
+
+To run the same suite with address and undefined-behavior sanitizers:
 
 ```sh
 clang++ -std=c++11 -Wall -Wextra -pedantic -fsanitize=address,undefined \
-  -DTEMA1_RULE_TESTS src/lab_m1/Tema1/tests/rules_tests.cpp \
-  -o /tmp/tema1-rules-tests
+  -DTEMA1_RULE_TESTS -Isrc \
+  src/lab_m1/Tema1/tests/rules_tests.cpp \
+  src/lab_m1/Tema1/game_types.cpp src/lab_m1/Tema1/game_rules.cpp \
+  src/lab_m1/Tema1/game_effects.cpp -o /tmp/tema1-rules-tests
 /tmp/tema1-rules-tests
 ```
 
